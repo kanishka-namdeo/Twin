@@ -108,43 +108,21 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
 
   const saveTimeoutRef = useRef<NodeJS.Timeout>(undefined);
 
-  const initializeSummaryModelSelection = async (preferredModel = selectedSummaryModel) => {
-    try {
-      const recommendedModel = await invoke<string>('builtin_ai_get_recommended_model');
-      setRecommendedSummaryModel(recommendedModel);
-      const modelToCheck = preferredModel || recommendedModel;
-      setSelectedSummaryModel(modelToCheck);
-
-      const selectedModelReady = await invoke<boolean>('builtin_ai_is_model_ready', {
-        modelName: modelToCheck,
-        refresh: true,
-      });
-      const resolved = resolveOnboardingSummaryModelStatus({
-        selectedModel: preferredModel,
-        recommendedModel,
-        selectedModelReady,
-      });
-
-      setSelectedSummaryModel(resolved.selectedSummaryModel);
-      setSummaryModelDownloaded(resolved.summaryModelDownloaded);
-      console.log('[OnboardingContext] Set recommended model:', resolved.selectedSummaryModel);
-
-      return resolved;
-    } catch (error) {
-      console.error('[OnboardingContext] Failed to initialize summary model:', error);
-      return null;
-    }
+  const initializeSummaryModelSelection = async () => {
+    // Built-in AI removed - summary model selection now handled by user in settings
+    // Default to Ollama for onboarding
+    setRecommendedSummaryModel('llama3.2:latest');
+    setSelectedSummaryModel('llama3.2:latest');
+    return {
+      selectedSummaryModel: 'llama3.2:latest',
+      summaryModelDownloaded: false,
+    };
   };
 
   const requestSummaryModelDownload = (modelName: string) => {
-    console.log('[OnboardingContext] Starting Summary Model download');
-    invoke('builtin_ai_download_model', { modelName })
-      .catch(err => {
-        if (String(err).includes('Download already in progress')) {
-          return;
-        }
-        console.error('[OnboardingContext] Summary Model download failed:', err);
-      });
+    // Built-in AI removed - summary model download no longer managed here
+    // Users manage summary models through the settings UI
+    console.log('[OnboardingContext] Summary model download not managed in onboarding');
   };
 
   // Load status on mount and initialize database
@@ -175,41 +153,8 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
   };
 
   const performAutoDetection = async () => {
-    // Check Homebrew (macOS only)
-    if (typeof navigator !== 'undefined' && navigator.platform?.toLowerCase().includes('mac')) {
-      const homebrewDbPath = '/usr/local/var/twin/meeting_minutes.db';
-      try {
-        const homebrewCheck = await invoke<{ exists: boolean; size: number } | null>(
-          'check_homebrew_database',
-          { path: homebrewDbPath }
-        );
-
-        if (homebrewCheck?.exists) {
-          console.log('[OnboardingContext] Found Homebrew database, importing');
-          await invoke('import_and_initialize_database', { legacyDbPath: homebrewDbPath });
-          setDatabaseExists(true);
-          return;
-        }
-      } catch (e) {
-        console.log('[OnboardingContext] Homebrew check failed, continuing:', e);
-      }
-    }
-
-    // Check default legacy database location
-    try {
-      const legacyPath = await invoke<string | null>('check_default_legacy_database');
-      if (legacyPath) {
-        console.log('[OnboardingContext] Found legacy database, importing');
-        await invoke('import_and_initialize_database', { legacyDbPath: legacyPath });
-        setDatabaseExists(true);
-        return;
-      }
-    } catch (e) {
-      console.log('[OnboardingContext] Legacy check failed, continuing:', e);
-    }
-
-    // No legacy database found - initialize fresh
-    console.log('[OnboardingContext] No legacy database found, initializing fresh');
+    // No legacy database detection - initialize fresh
+    console.log('[OnboardingContext] Initializing fresh database');
     await invoke('initialize_fresh_database');
     setDatabaseExists(true);
   };
@@ -391,27 +336,10 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
     }
 
     // Verify the selected/recommended Summary model exists on disk.
-    try {
-      const recommendedModel = await invoke<string>('builtin_ai_get_recommended_model');
-      setRecommendedSummaryModel(recommendedModel);
-      const savedSelectedModel = savedStatus.model_status.selected_summary_model || '';
-      const modelToCheck = savedSelectedModel || recommendedModel;
-      const selectedModelReady = await invoke<boolean>('builtin_ai_is_model_ready', {
-        modelName: modelToCheck,
-        refresh: true,
-      });
-      const resolved = resolveOnboardingSummaryModelStatus({
-        selectedModel: savedSelectedModel,
-        recommendedModel,
-        selectedModelReady,
-      });
-      selectedSummaryModel = resolved.selectedSummaryModel;
-      summaryModelDownloaded = resolved.summaryModelDownloaded;
-      console.log('[OnboardingContext] Summary model verified on disk:', summaryModelDownloaded, 'model:', selectedSummaryModel);
-    } catch (error) {
-      console.warn('[OnboardingContext] Failed to verify Summary model:', error);
-      summaryModelDownloaded = false;
-    }
+    // Built-in AI removed - summary model verification skipped
+    // Users configure summary models through settings
+    summaryModelDownloaded = true;
+    selectedSummaryModel = 'ollama';
 
     // Determine the correct step based on verified status
     // New simplified flow: Step 1: Welcome, Step 2: Setup Overview, Step 3: Download Progress, Step 4: Permissions (macOS)
@@ -475,18 +403,12 @@ export function OnboardingProvider({ children }: { children: React.ReactNode }) 
 
       let modelToSave = selectedSummaryModel;
       if (!modelToSave) {
-        modelToSave = await invoke<string>('builtin_ai_get_recommended_model');
+        modelToSave = 'llama3.2:latest';
         setSelectedSummaryModel(modelToSave);
       }
 
-      const selectedModelReady = await invoke<boolean>('builtin_ai_is_model_ready', {
-        modelName: modelToSave,
-        refresh: true,
-      });
-      setSummaryModelDownloaded(selectedModelReady);
-      if (!selectedModelReady) {
-        requestSummaryModelDownload(modelToSave);
-      }
+      // Built-in AI removed - just mark as ready for onboarding completion
+      setSummaryModelDownloaded(true);
 
       // Onboarding always uses builtin-ai with selected model
       await invoke('complete_onboarding', {

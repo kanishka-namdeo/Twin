@@ -2,16 +2,12 @@
 
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
-import { Copy, Save, Loader2, Search, FolderOpen } from 'lucide-react';
-import Analytics from '@/lib/analytics';
-
+import { Copy, Save, Loader2 } from 'lucide-react';
 interface SummaryUpdaterButtonGroupProps {
   isSaving: boolean;
   isDirty: boolean;
   onSave: () => Promise<void>;
   onCopy: () => Promise<void>;
-  onFind?: () => void;
-  onOpenFolder: () => Promise<void>;
   hasSummary: boolean;
 }
 
@@ -20,8 +16,6 @@ export function SummaryUpdaterButtonGroup({
   isDirty,
   onSave,
   onCopy,
-  onFind,
-  onOpenFolder,
   hasSummary
 }: SummaryUpdaterButtonGroupProps) {
   return (
@@ -33,7 +27,6 @@ export function SummaryUpdaterButtonGroup({
         className={`${isDirty ? 'bg-green-200' : ""}`}
         title={isSaving ? "Saving" : "Save Changes"}
         onClick={() => {
-          Analytics.trackButtonClick('save_changes', 'meeting_details');
           onSave();
         }}
         disabled={isSaving}
@@ -57,7 +50,6 @@ export function SummaryUpdaterButtonGroup({
         size="sm"
         title="Copy Summary"
         onClick={() => {
-          Analytics.trackButtonClick('copy_summary', 'meeting_details');
           onCopy();
         }}
         disabled={!hasSummary}
@@ -67,23 +59,6 @@ export function SummaryUpdaterButtonGroup({
         <span className="hidden lg:inline">Copy</span>
       </Button>
 
-      {/* Find button */}
-      {/* {onFind && (
-        <Button
-          variant="outline"
-          size="sm"
-          title="Find in Summary"
-          onClick={() => {
-            Analytics.trackButtonClick('find_in_summary', 'meeting_details');
-            onFind();
-          }}
-          disabled={!hasSummary}
-          className="cursor-pointer"
-        >
-          <Search />
-          <span className="hidden lg:inline">Find</span>
-        </Button>
-      )} */}
-    </ButtonGroup>
+      </ButtonGroup>
   );
 }

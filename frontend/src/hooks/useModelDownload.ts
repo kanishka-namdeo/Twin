@@ -30,15 +30,9 @@ export function useModelDownload(): UseModelDownloadReturn {
       const parakeetReady = await invoke<boolean>('parakeet_has_available_models');
       setIsParakeetReady(parakeetReady);
 
-      // Check summary model
-      const recommendedModel = await invoke<string>('builtin_ai_get_recommended_model');
-      if (recommendedModel) {
-        const summaryReady = await invoke<boolean>('builtin_ai_is_model_ready', {
-          modelName: recommendedModel,
-          refresh: true,
-        });
-        setIsSummaryReady(summaryReady);
-      }
+      // Summary model readiness is no longer tracked here
+      // Users configure summary models through settings
+      setIsSummaryReady(true);
     } catch (error) {
       console.error('[useModelDownload] Failed to check model status:', error);
     }
@@ -50,9 +44,6 @@ export function useModelDownload(): UseModelDownloadReturn {
       setIsDownloading(true);
       setDownloadProgress(0);
 
-      // Get recommended summary model
-      const recommendedModel = await invoke<string>('builtin_ai_get_recommended_model');
-
       // Start Parakeet download
       if (!isParakeetReady) {
         console.log('[useModelDownload] Starting Parakeet download');
@@ -62,21 +53,11 @@ export function useModelDownload(): UseModelDownloadReturn {
           }
         });
       }
-
-      // Start summary model download
-      if (!isSummaryReady && recommendedModel) {
-        console.log('[useModelDownload] Starting summary model download');
-        invoke('builtin_ai_download_model', { modelName: recommendedModel }).catch(err => {
-          if (!String(err).includes('Download already in progress')) {
-            console.error('[useModelDownload] Summary download failed:', err);
-          }
-        });
-      }
     } catch (error) {
       console.error('[useModelDownload] Failed to start download:', error);
       setIsDownloading(false);
     }
-  }, [isParakeetReady, isSummaryReady]);
+  }, [isParakeetReady]);
 
   // Listen to download progress
   useEffect(() => {
@@ -104,17 +85,6 @@ export function useModelDownload(): UseModelDownloadReturn {
       }
     );
 
-    const unlistenSummary = listen<{
-      model: string;
-      progress: number;
-      status: string;
-    }>('builtin-ai-download-progress', (event) => {
-      const { model, progress, status } = event.payload;
-      if (status === 'completed' || progress >= 100) {
-        setIsSummaryReady(true);
-      }
-    });
-
     // Check if downloads are already in progress
     const checkActiveDownloads = async () => {
       try {
@@ -140,7 +110,6 @@ export function useModelDownload(): UseModelDownloadReturn {
     return () => {
       unlistenParakeet.then(fn => fn());
       unlistenParakeetComplete.then(fn => fn());
-      unlistenSummary.then(fn => fn());
     };
   }, [checkModelStatus]);
 

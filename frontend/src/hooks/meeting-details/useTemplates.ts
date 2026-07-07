@@ -1,8 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke as invokeTauri } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
-import Analytics from '@/lib/analytics';
-
 export function useTemplates() {
   const [availableTemplates, setAvailableTemplates] = useState<Array<{
     id: string;
@@ -35,7 +33,6 @@ export function useTemplates() {
     toast.success('Template selected', {
       description: `Using "${templateName}" template for summary generation`,
     });
-    Analytics.trackFeatureUsed('template_selected');
   }, []);
 
   return {

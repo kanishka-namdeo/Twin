@@ -4,9 +4,7 @@ import { ModelConfig } from '@/components/ModelSettingsModal';
 import { CurrentMeeting, useSidebar } from '@/components/Sidebar/SidebarProvider';
 import { invoke as invokeTauri } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
-import Analytics from '@/lib/analytics';
 import { isOllamaNotInstalledError } from '@/lib/utils';
-import { BuiltInModelInfo } from '@/lib/builtin-ai';
 import {
   detectAndCacheSummaryLanguage,
   readMeetingSummaryLanguage,
@@ -121,19 +119,6 @@ export function useSummaryGeneration({
       // Calculate time since recording
       const timeSinceRecording = (Date.now() - new Date(meeting.created_at).getTime()) / 60000; // minutes
 
-      // Track summary generation started
-      await Analytics.trackSummaryGenerationStarted(
-        modelConfig.provider,
-        modelConfig.model,
-        transcriptText.length,
-        timeSinceRecording
-      );
-
-      // Track custom prompt usage if present
-      if (customPrompt.trim().length > 0) {
-        await Analytics.trackCustomPromptUsed(customPrompt.trim().length);
-      }
-
       // Show toast notification for generation start
       toast.info(`${isRegeneration ? 'Regenerating' : 'Generating'} summary...`, {
         description: `Using ${modelConfig.provider}/${modelConfig.model}`,
@@ -215,13 +200,6 @@ export function useSummaryGeneration({
                   description: `${errorMessage}. Your previous summary has been restored.`,
                 });
 
-                await Analytics.trackSummaryGenerationCompleted(
-                  modelConfig.provider,
-                  modelConfig.model,
-                  false,
-                  undefined,
-                  errorMessage
-                );
                 return;
               }
             } catch (error) {
@@ -251,13 +229,6 @@ export function useSummaryGeneration({
             onOpenModelSettings();
           }
 
-          await Analytics.trackSummaryGenerationCompleted(
-            modelConfig.provider,
-            modelConfig.model,
-            false,
-            undefined,
-            errorMessage
-          );
           return;
         }
 
@@ -287,11 +258,6 @@ export function useSummaryGeneration({
               await onMeetingUpdated();
             }
 
-            await Analytics.trackSummaryGenerationCompleted(
-              modelConfig.provider,
-              modelConfig.model,
-              true
-            );
             return;
           }
 
@@ -304,13 +270,6 @@ export function useSummaryGeneration({
             setSummaryError('Summary generation completed but returned empty content.');
             setSummaryStatus('error');
 
-            await Analytics.trackSummaryGenerationCompleted(
-              modelConfig.provider,
-              modelConfig.model,
-              false,
-              undefined,
-              'Empty summary generated'
-            );
             return;
           }
 
@@ -357,12 +316,6 @@ export function useSummaryGeneration({
             duration: 4000,
           });
 
-          await Analytics.trackSummaryGenerationCompleted(
-            modelConfig.provider,
-            modelConfig.model,
-            true
-          );
-
           if (meetingName && onMeetingUpdated) {
             await onMeetingUpdated();
           }
@@ -379,13 +332,6 @@ export function useSummaryGeneration({
         description: errorMessage,
       });
 
-      await Analytics.trackSummaryGenerationCompleted(
-        modelConfig.provider,
-        modelConfig.model,
-        false,
-        undefined,
-        errorMessage
-      );
     }
   }, [
     meeting.id,
@@ -517,93 +463,6 @@ export function useSummaryGeneration({
             { duration: 5000 }
           );
         }
-        return;
-      }
-    }
-
-    // Check if built-in AI provider has models available
-    if (modelConfig.provider === 'builtin-ai') {
-      try {
-        const selectedModel = modelConfig.model;
-
-        if (!selectedModel) {
-          toast.error('No built-in AI model selected', {
-            description: 'Please select a model in settings',
-            duration: 5000,
-          });
-          if (onOpenModelSettings) {
-            onOpenModelSettings();
-          }
-          return;
-        }
-
-        // Check model readiness with filesystem refresh
-        const isReady = await invokeTauri<boolean>('builtin_ai_is_model_ready', {
-          modelName: selectedModel,
-          refresh: true,
-        });
-
-        if (!isReady) {
-          // Get detailed model status
-          const modelInfo = await invokeTauri<BuiltInModelInfo | null>('builtin_ai_get_model_info', {
-            modelName: selectedModel,
-          });
-
-          if (modelInfo) {
-            const status = modelInfo.status;
-
-            if (status.type === 'downloading') {
-              toast.info('Model download in progress', {
-                description: `${selectedModel} is downloading (${status.progress}%). Please wait until download completes.`,
-                duration: 5000,
-              });
-              return;
-            }
-
-            if (status.type === 'not_downloaded') {
-              toast.error('Built-in AI model not downloaded', {
-                description: `${selectedModel} needs to be downloaded. Please download it in model settings.`,
-                duration: 7000,
-              });
-              if (onOpenModelSettings) {
-                onOpenModelSettings();
-              }
-              return;
-            }
-
-            if (status.type === 'corrupted' || status.type === 'error') {
-              const errorDesc = status.type === 'error'
-                ? status.Error || 'The model file has an error'
-                : 'The model file is corrupted';
-              toast.error('Built-in AI model not available', {
-                description: `${errorDesc}. Please check model settings.`,
-                duration: 7000,
-              });
-              if (onOpenModelSettings) {
-                onOpenModelSettings();
-              }
-              return;
-            }
-          }
-
-          // Fallback if we couldn't get model info
-          toast.error('Built-in AI model not ready', {
-            description: 'Please ensure the model is downloaded in settings',
-            duration: 5000,
-          });
-          if (onOpenModelSettings) {
-            onOpenModelSettings();
-          }
-          return;
-        }
-
-        // Model is ready, continue to backend call
-      } catch (error) {
-        console.error('Error validating built-in AI model:', error);
-        toast.error('Failed to validate built-in AI model', {
-          description: error instanceof Error ? error.message : String(error),
-          duration: 5000,
-        });
         return;
       }
     }
