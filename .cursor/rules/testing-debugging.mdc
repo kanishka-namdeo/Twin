@@ -1,0 +1,36 @@
+---
+description: Testing and debugging patterns
+alwaysApply: false
+---
+
+# Testing and Debugging
+
+> **Scope**: Manually attach when debugging issues
+
+## Enable Logging
+
+| Platform | Command |
+|----------|---------|
+| macOS | `RUST_LOG=debug ./clean_run.sh` |
+| Windows (PowerShell) | `$env:RUST_LOG="debug"; ./clean_run_windows.bat` |
+| Audio-specific | `RUST_LOG=app_lib::audio=debug ./clean_run.sh` |
+
+## Developer Tools
+
+- Open DevTools: `Cmd+Shift+I` (macOS) / `Ctrl+Shift+I` (Windows)
+- Console Toggle: Built into app UI
+
+## Audio Metrics
+
+- Buffer sizes (mic/system)
+- Mixing window count
+- VAD detection rate
+- Dropped chunk warnings
+
+## Platform Quirks
+
+| Platform | Key Issue |
+|----------|-----------|
+| macOS | ScreenCaptureKit needs macOS 13+ + screen recording permission |
+| Windows | WASAPI exclusive mode can conflict with other apps |
+| Linux | Needs cmake, llvm, libomp |

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <style>
+    .primary { fill: #3B82F6; }
+    .secondary { fill: #10B981; }
+    .surface { fill: #FFFFFF; }
+    
+    @media (prefers-color-scheme: dark) {
+      .primary { fill: #60A5FA; }
+      .secondary { fill: #34D399; }
+      .surface { fill: #0F172A; }
+    }
+  </style>
+  
+  <!-- Geometric minimal: Two intersecting hexagons -->
+  <g id="logo-mark">
+    <!-- Hexagon 1 -->
+    <polygon points="35,25 55,15 75,25 75,45 55,55 35,45" class="primary" opacity="0.85" />
+    
+    <!-- Hexagon 2 (offset) -->
+    <polygon points="25,55 45,45 65,55 65,75 45,85 25,75" class="secondary" opacity="0.85" />
+    
+    <!-- Intersection highlight -->
+    <polygon points="35,45 55,55 45,65 25,55" class="surface" opacity="0.3" />
+  </g>
+</svg>

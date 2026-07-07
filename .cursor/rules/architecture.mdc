@@ -1,0 +1,49 @@
+---
+description: Architecture patterns for Tauri app
+globs: frontend/src-tauri/src/*.rs
+alwaysApply: false
+---
+
+# Tauri Architecture Patterns
+
+> **Scope**: Applies when editing Rust files in the Tauri backend root (not in audio/, whisper_engine/, or lifecycle/ subdirectories)
+
+## Command Pattern (Frontend → Rust)
+
+```rust
+#[tauri::command]
+async fn my_command<R: Runtime>(
+    app: AppHandle<R>,
+    arg: String
+) -> Result<String, String> {
+    // Implementation
+}
+```
+
+Register in `tauri::Builder`:
+```rust
+.invoke_handler(tauri::generate_handler![
+    start_recording,
+    my_command,  // Add here
+])
+```
+
+## Event Pattern (Rust → Frontend)
+
+```rust
+app.emit("transcript-update", payload)?;
+```
+
+## Thread Safety
+
+```rust
+Arc<RwLock<T>>      // Shared state across async tasks
+Arc<AtomicBool>     // Simple flags
+```
+
+## Performance-Aware Logging
+
+```rust
+perf_debug!()   // Hot-path logging, zero cost in release
+perf_trace!()   // Even finer-grained, eliminated in release
+```
