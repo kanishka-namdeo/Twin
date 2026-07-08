@@ -104,6 +104,10 @@ pub struct Setting {
     #[sqlx(rename = "customOpenAIConfig")]
     #[serde(rename = "customOpenAIConfig")]
     pub custom_openai_config: Option<String>,
+    /// Auto-summarize enabled flag (0 = disabled, 1 = enabled)
+    #[sqlx(rename = "autoSummarizeEnabled")]
+    #[serde(rename = "autoSummarizeEnabled")]
+    pub auto_summarize_enabled: i32,
 }
 
 impl Setting {

@@ -36,12 +36,16 @@ app.emit("transcript-update", payload)?;
 
 ## Thread Safety
 
+> **Note**: Module-specific thread safety patterns are documented in child AGENTS.md files (e.g., `audio/AGENTS.md`). This section covers the general pattern only.
+
 ```rust
 Arc<RwLock<T>>      // Shared state across async tasks
 Arc<AtomicBool>     // Simple flags
 ```
 
 ## Performance-Aware Logging
+
+> **Note**: See module AGENTS.md files for context-specific logging patterns. The macros below are defined project-wide.
 
 ```rust
 perf_debug!()   // Hot-path logging, zero cost in release

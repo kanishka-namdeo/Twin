@@ -116,20 +116,77 @@ const stagger = {
 
 ## Responsive Strategy
 
-### Breakpoint Behavior
+This is a **Tauri desktop application**, not a web app. Viewport responsiveness uses CSS media queries and the `useMediaQuery` hook for state synchronization.
 
-| Component | Mobile | Tablet | Desktop |
-|:----------|:-------|:-------|:--------|
-| Hero | Single column, hide graphic | — | Asymmetric grid |
-| Stats | 2 cols | — | 4 cols with dividers |
-| Features | 1 col | 2 cols | 3 cols |
-| Pricing | Stack | — | 3 cols, center elevated |
+### Viewport Breakpoints
+
+| Breakpoint | Width | Behavior |
+|:-----------|:------|:---------|
+| Compact | `<900px` | Sidebar auto-collapses to icon-only mode |
+| Standard | `900-1199px` | Two-panel layout, standard spacing |
+| Comfortable | `1200-1599px` | Expanded content areas, larger max-widths |
+| Extended | `≥1600px` | Maximum content width, full feature set |
+
+### Implementation Pattern
+
+The sidebar uses a **user-preference-first** approach:
+
+1. **First visit**: Sidebar auto-collapses on compact viewports (`<900px`), stays expanded on larger viewports
+2. **After user toggles**: Their preference is persisted to `localStorage` and respected regardless of viewport
+3. **JS sync**: Use `useMediaQuery` hook only for initial state and CSS class synchronization
+
+```typescript
+import { useMediaQuery, VIEWPORT_BREAKPOINTS } from '@/hooks/useMediaQuery';
+
+// In SidebarProvider:
+const isCompact = useMediaQuery(VIEWPORT_BREAKPOINTS.compact);
+
+// Initialize from localStorage, fallback to viewport
+const [isCollapsed, setIsCollapsed] = useState(() => {
+  const saved = localStorage.getItem('sidebar-collapsed');
+  if (saved !== null) return saved === 'true';
+  return window.matchMedia(VIEWPORT_BREAKPOINTS.compact).matches;
+});
+
+// Toggle with persistence
+const toggleCollapse = () => {
+  const newValue = !isCollapsed;
+  setIsCollapsed(newValue);
+  localStorage.setItem('sidebar-collapsed', String(newValue));
+};
+
+// Auto-collapse only on first visit (no saved preference)
+useEffect(() => {
+  const saved = localStorage.getItem('sidebar-collapsed');
+  if (saved === null && isCompact) {
+    setIsCollapsed(true);
+  }
+}, [isCompact]);
+```
+
+### Content Width Tokens
+
+Use Tailwind's responsive max-width utilities to scale content with viewport:
+
+```tsx
+// Standard pattern: fluid width with breakpoint-specific max-widths
+<div className="w-full max-w-3xl lg:max-w-4xl">
+  {/* Content adapts: 768px on standard, 896px on large+ */}
+</div>
+```
+
+| Token | Value | Usage |
+|:------|:------|:------|
+| `max-w-3xl` | `48rem` (768px) | Transcript content, recording controls |
+| `max-w-4xl` | `56rem` (896px) | Same elements on large viewports |
+| `max-w-6xl` | `72rem` (1152px) | Settings pages, full-width content |
+| `max-w-7xl` | `80rem` (1280px) | Main content wrapper |
 
 ### Key Adaptations
 
-- Headlines: `text-[2.75rem]` → `text-6xl` → `text-[5.25rem]`
-- Section padding: `py-28` → `py-44` (reduce slightly, not dramatically)
-- Hide decorative elements: `hidden lg:block`
+- Sidebar: Auto-collapses at `<900px` via `useMediaQuery` hook
+- Content padding: `p-4` → `p-6` → `p-8` → `p-10` across breakpoints
+- Content max-width: `max-w-3xl` → `max-w-4xl` on large viewports
 - Button widths: `w-full sm:w-auto` on mobile
 - Touch targets: 44px minimum on all interactive elements
 

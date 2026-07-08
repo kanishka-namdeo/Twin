@@ -58,6 +58,9 @@ impl Drop for ParakeetModel {
     fn drop(&mut self) {
         log::info!("Dropping ParakeetModel, releasing GPU memory (CUDA sessions if enabled)");
         log::debug!("Dropping ParakeetModel with {} vocab tokens", self.vocab.len());
+        // Sessions are automatically dropped by the compiler-generated Drop for ParakeetModel.
+        // ort::Session implements Drop which releases ONNX Runtime resources including CUDA allocations.
+        // No manual cleanup needed here.
     }
 }
 

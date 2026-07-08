@@ -63,10 +63,10 @@ export default function SettingsPage() {
   }, [activeTab]);
 
   return (
-    <div className="h-screen bg-gray-50 flex flex-col w-full overflow-hidden">
+    <div className="h-screen bg-[var(--background)] flex flex-col w-full overflow-hidden">
       {/* Fixed Header */}
-      <div className="sticky top-0 z-10 bg-gray-50 border-b border-gray-200">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+      <div className="sticky top-0 z-10 bg-[var(--background)] border-b border-[var(--border)]">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
           <div className="flex items-center gap-4">
             <button
               onClick={() => router.back()}
@@ -82,10 +82,10 @@ export default function SettingsPage() {
 
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8 pt-4 sm:pt-6">
+        <div className="max-w-4xl mx-auto p-4 sm:p-6 lg:p-8 pt-4 sm:pt-6">
           {/* Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="bg-transparent relative rounded-none border-b border-gray-200 p-0 h-auto">
+            <TabsList className="bg-transparent relative rounded-none border-b border-[var(--border)] p-0 h-auto">
               {TABS.map((tab, index) => {
                 const Icon = tab.icon;
                 return (

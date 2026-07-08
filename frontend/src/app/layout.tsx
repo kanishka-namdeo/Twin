@@ -1,7 +1,7 @@
 'use client'
 
 import './globals.css'
-import { Source_Sans_3, Calistoga, JetBrains_Mono } from 'next/font/google'
+import { Inter, Calistoga, JetBrains_Mono } from 'next/font/google'
 import Sidebar from '@/components/Sidebar'
 import { SidebarProvider } from '@/components/Sidebar/SidebarProvider'
 import MainContent from '@/components/MainContent'
@@ -26,10 +26,10 @@ import { ImportDialogProvider } from '@/contexts/ImportDialogContext'
 import { isAudioExtension, getAudioFormatsDisplayList } from '@/constants/audioFormats'
 
 
-const sourceSans3 = Source_Sans_3({
+const inter = Inter({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700'],
-  variable: '--font-source-sans-3',
+  variable: '--font-inter',
 })
 
 const calistoga = Calistoga({
@@ -72,6 +72,8 @@ function ConditionalImportDialog({
 }
 
 // export { metadata } from './metadata'
+
+
 
 export default function RootLayout({
   children,
@@ -242,7 +244,7 @@ export default function RootLayout({
 
   return (
     <html lang="en">
-      <body className={`${sourceSans3.variable} ${calistoga.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
+      <body className={`${inter.variable} ${calistoga.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
         <RecordingStateProvider>
           <TranscriptProvider>
             <ConfigProvider>

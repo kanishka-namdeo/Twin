@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="brand-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0052FF" />
+      <stop offset="100%" stop-color="#4D7CFF" />
+    </linearGradient>
+    
+    <linearGradient id="brand-gradient-dark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4D7CFF" />
+      <stop offset="100%" stop-color="#60A5FA" />
+    </linearGradient>
+  </defs>
+  
+  <style>
+    .gradient-fill { fill: url(#brand-gradient); }
+    .surface { fill: #FFFFFF; }
+    .accent { fill: #10B981; }
+    
+    @media (prefers-color-scheme: dark) {
+      .gradient-fill { fill: url(#brand-gradient-dark); }
+      .surface { fill: #0F172A; }
+      .accent { fill: #34D399; }
+    }
+  </style>
+  
+  <!-- Gradient wave concept: Modern, fluid design -->
+  <g id="logo-mark">
+    <!-- Circular background with gradient -->
+    <circle cx="50" cy="50" r="45" class="gradient-fill" />
+    
+    <!-- Audio wave visualization -->
+    <path d="M20,50 Q25,35 30,50 T40,50 Q45,35 50,50 T60,50 Q65,35 70,50 T80,50" 
+          class="surface" stroke-width="3" fill="none" opacity="0.9" stroke-linecap="round" />
+    
+    <!-- Secondary wave (echo/transcription) -->
+    <path d="M20,60 Q25,45 30,60 T40,60 Q45,45 50,60 T60,60 Q65,45 70,60 T80,60" 
+          class="surface" stroke-width="2" fill="none" opacity="0.5" stroke-linecap="round" />
+    
+    <!-- Recording indicator -->
+    <circle cx="50" cy="40" r="4" class="accent" opacity="0.8" />
+  </g>
+</svg>

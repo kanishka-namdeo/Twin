@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <style>
+    .primary { fill: #0052FF; }
+    .secondary { fill: #4D7CFF; }
+    .surface { fill: #FFFFFF; }
+    .accent { fill: #10B981; }
+    
+    @media (prefers-color-scheme: dark) {
+      .primary { fill: #4D7CFF; }
+      .secondary { fill: #60A5FA; }
+      .surface { fill: #0F172A; }
+      .accent { fill: #34D399; }
+    }
+  </style>
+  
+  <!-- Privacy shield concept: Security/privacy theme -->
+  <g id="logo-mark">
+    <!-- Shield shape -->
+    <path d="M50,10 L85,25 L85,55 Q85,85 50,95 Q15,85 15,55 L15,25 Z" class="primary" />
+    
+    <!-- Inner shield detail -->
+    <path d="M50,20 L75,32 L75,52 Q75,77 50,87 Q25,77 25,52 L25,32 Z" class="secondary" opacity="0.4" />
+    
+    <!-- Checkmark/lock symbol inside -->
+    <path d="M40,55 L50,65 L65,45" class="surface" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+    
+    <!-- Accent dot -->
+    <circle cx="50" cy="45" r="4" class="accent" opacity="0.8" />
+  </g>
+</svg>

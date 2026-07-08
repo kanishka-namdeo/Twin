@@ -5,7 +5,8 @@ alwaysApply: false
 
 # Testing and Debugging
 
-> **Scope**: Manually attach when debugging issues
+> **Scope**: Manually attach when debugging issues.
+> **Full reference**: See `AGENTS.md` "When Stuck" section and module-specific AGENTS.md files for detailed logging and platform guidance.
 
 ## Enable Logging
 

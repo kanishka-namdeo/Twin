@@ -200,3 +200,16 @@ Debugging techniques (try in any order):
 - Read the key files listed in child AGENTS.md files
 - Enable debug logging: `RUST_LOG=debug ./clean_run.sh`
 - Open DevTools: `Cmd+Shift+I` (macOS) or `Ctrl+Shift+I` (Windows)
+## Cursor Rules
+
+Code patterns are enforced via `.cursor/rules/` — these auto-apply in Cursor when editing matching files:
+
+| Rule | Governs |
+|:-----|:--------|
+| `design-tokens.mdc` | Colors, typography, spacing, shadows (all frontend files) |
+| `design-components.mdc` | Button, card, input, badge patterns (`components/ui/`) |
+| `design-layout.mdc` | Section structure, grids, animation, desktop layout (pages and feature components) |
+| `architecture.mdc` | Tauri command/event patterns, thread safety (Rust backend root) |
+| `testing-debugging.mdc` | Logging, DevTools, platform quirks (manual attach) |
+
+These rules complement AGENTS.md files: rules enforce code patterns, AGENTS.md files govern process, workflows, and module contracts. When both apply, follow both — rules for how to write code, AGENTS.md for what to do before/after editing.

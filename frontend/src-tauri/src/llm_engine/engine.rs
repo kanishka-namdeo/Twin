@@ -332,68 +332,24 @@ impl LlamaEngine {
 }
 
 /// Detect available system memory in bytes.
-/// Uses GPU VRAM when GPU acceleration is enabled, otherwise falls back to system RAM.
+/// Uses available system RAM as the primary metric.
+/// On macOS with Metal, this accurately reflects GPU-available memory
+/// since Apple Silicon uses unified memory. For discrete GPUs (CUDA/Vulkan),
+/// this is a conservative estimate that prevents OOM in most cases.
 pub fn detect_available_memory() -> Result<u64> {
     use sysinfo::System;
 
-    let gpu_info = LlamaEngine::get_gpu_info();
-
-    if gpu_info.enabled {
-        // Try to get GPU VRAM via sysinfo components
-        let mut sys = System::new();
-        sys.refresh_components_list();
-
-        // Look for GPU memory in components
-        for component in sys.components() {
-            let label = component.label().to_lowercase();
-            if label.contains("gpu") || label.contains("vram") || label.contains("graphics") {
-                // sysinfo reports in MB for some components
-                let mb = component.value();
-                if mb > 0 {
-                    let bytes = mb as u64 * 1024 * 1024;
-                    info!("Detected GPU memory: {} MB via sysinfo", mb);
-                    return Ok(bytes);
-                }
-            }
-        }
-
-        // Fallback: on macOS with Metal, unified memory is shared with system RAM
-        // so we use available system RAM as the best estimate
-        #[cfg(target_os = "macos")]
-        {
-            let mut sys = System::new();
-            sys.refresh_memory();
-            let available = sys.available_memory();
-            info!("Metal unified memory - using available system RAM: {} MB", available / (1024 * 1024));
-            return Ok(available);
-        }
-
-        // For CUDA/Vulkan, try platform-specific detection
-        #[cfg(target_os = "windows")]
-        {
-            // On Windows, use available system RAM as fallback for GPU memory estimation
-            let mut sys = System::new();
-            sys.refresh_memory();
-            let available = sys.available_memory();
-            info!("Windows GPU fallback - using available system RAM: {} MB", available / (1024 * 1024));
-            return Ok(available);
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            let mut sys = System::new();
-            sys.refresh_memory();
-            let available = sys.available_memory();
-            info!("Linux GPU fallback - using available system RAM: {} MB", available / (1024 * 1024));
-            return Ok(available);
-        }
-    }
-
-    // CPU-only mode: use available system RAM
-    let mut sys = System::new();
+    let mut sys = System::new_all();
     sys.refresh_memory();
     let available = sys.available_memory();
-    info!("CPU mode - available system RAM: {} MB", available / (1024 * 1024));
+    
+    let gpu_info = LlamaEngine::get_gpu_info();
+    info!(
+        "{} mode - available system RAM: {} MB",
+        gpu_info.backend,
+        available / (1024 * 1024)
+    );
+    
     Ok(available)
 }
 
@@ -418,12 +374,13 @@ pub fn recommend_model(available_memory: u64, models: &[(String, u64)]) -> Optio
             let runtime_mb = (*size_mb as f64 * 1.5) as u64;
             runtime_mb <= usable_mb
         })
+        .map(|(name, size)| (name, *size))
         .collect();
 
     // Sort by size descending - recommend the largest model that fits
     fitting_models.sort_by(|a, b| b.1.cmp(&a.1));
 
-    fitting_models.first().map(|(name, _)| name.clone())
+    fitting_models.first().map(|(name, _)| (*name).clone())
 }
 
 impl Drop for LlamaEngine {

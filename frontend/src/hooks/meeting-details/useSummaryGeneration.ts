@@ -492,20 +492,276 @@ export function useSummaryGeneration({
 
   // Public API: Regenerate summary from the current saved transcript
   const handleRegenerateSummary = useCallback(async (generationParams?: GenerationParams) => {
-    const allTranscripts = await fetchAllTranscripts(meeting.id);
-
-    if (!allTranscripts.length) {
-      console.error('No transcripts available for regeneration');
-      toast.error('No transcripts available for summary regeneration');
+    // Check if model config is still loading
+    if (isModelConfigLoading) {
+      console.log('⏳ Model configuration is still loading, please wait...');
+      toast.info('Loading model configuration, please wait...');
       return;
     }
 
-    await processSummary({
-      ...buildSummaryTranscriptPayload(allTranscripts),
-      isRegeneration: true,
-      generationParams,
-    });
-  }, [meeting.id, fetchAllTranscripts, buildSummaryTranscriptPayload, processSummary]);
+    // Check if Ollama provider has models available
+    if (modelConfig.provider === 'ollama') {
+      try {
+        const endpoint = modelConfig.ollamaEndpoint || null;
+        const models = await invokeTauri('get_ollama_models', { endpoint }) as any[];
+
+        if (!models || models.length === 0) {
+          toast.error(
+            'No Ollama models found. Please download gemma3:1b from Model Settings.',
+            { duration: 5000 }
+          );
+          return;
+        }
+      } catch (error) {
+        console.error('Error checking Ollama models:', error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+
+        if (isOllamaNotInstalledError(errorMessage)) {
+          toast.error(
+            'Ollama is not installed',
+            {
+              description: 'Please download and install Ollama to use local models.',
+              duration: 7000,
+              action: {
+                label: 'Download',
+                onClick: () => invokeTauri('open_external_url', { url: 'https://ollama.com/download' })
+              }
+            }
+          );
+        } else {
+          toast.error(
+            'Failed to check Ollama models. Please ensure Ollama is running and download a model from Settings.',
+            { duration: 5000 }
+          );
+        }
+        return;
+      }
+    }
+
+    setSummaryStatus('regenerating');
+    setSummaryError(null);
+
+    try {
+      console.log('Regenerating summary with config:', {
+        provider: modelConfig.provider,
+        model: modelConfig.model,
+        template: selectedTemplate,
+        generationParams
+      });
+
+      // Show toast notification for regeneration start
+      toast.info('Regenerating summary...', {
+        description: `Using ${modelConfig.provider}/${modelConfig.model}`,
+        duration: 3000,
+      });
+
+      // Resolve explicit metadata override first; Auto detects the transcript language.
+      const allTranscripts = await fetchAllTranscripts(meeting.id);
+      const transcriptTexts = allTranscripts.map(t => t.text);
+      const summaryLanguage = await resolveSummaryLanguage(
+        meeting.id,
+        transcriptTexts.length ? transcriptTexts : ['']
+      );
+
+      // Call the new backend regeneration command
+      const result = await invokeTauri('api_regenerate_summary', {
+        meetingId: meeting.id,
+        model: modelConfig.provider,
+        modelName: modelConfig.model,
+        customPrompt: '',
+        templateId: selectedTemplate,
+        summaryLanguage,
+        maxTokens: generationParams?.maxTokens ?? null,
+        temperature: generationParams?.temperature ?? null,
+        topP: generationParams?.topP ?? null,
+        topK: generationParams?.topK ?? null,
+      }) as any;
+
+      const process_id = result.process_id;
+      console.log('Regeneration Process ID:', process_id);
+
+      // Start global polling via context
+      startSummaryPolling(meeting.id, process_id, async (pollingResult) => {
+        console.log('Regeneration summary status:', pollingResult);
+
+        // Handle cancellation
+        if (pollingResult.status === 'cancelled') {
+          console.log('Summary regeneration was cancelled');
+
+          try {
+            const existingSummary = await invokeTauri('api_get_summary', {
+              meetingId: meeting.id
+            }) as any;
+
+            if (existingSummary?.data) {
+              console.log('Restored previous summary after cancellation');
+              setAiSummary(existingSummary.data);
+              setSummaryStatus('completed');
+            } else {
+              setSummaryStatus('idle');
+            }
+          } catch (error) {
+            console.error('Failed to reload summary after cancellation:', error);
+            setSummaryStatus('idle');
+          }
+
+          setSummaryError(null);
+          return;
+        }
+
+        // Handle errors
+        if (pollingResult.status === 'error' || pollingResult.status === 'failed') {
+          console.error('Backend returned error during regeneration:', pollingResult.error);
+          const errorMessage = pollingResult.error || 'Summary regeneration failed';
+
+          // Try to restore previous summary from database
+          try {
+            const existingSummary = await invokeTauri('api_get_summary', {
+              meetingId: meeting.id
+            }) as any;
+
+            if (existingSummary?.data) {
+              console.log('Restored previous summary after regeneration failure');
+              setAiSummary(existingSummary.data);
+              setSummaryStatus('completed');
+              setSummaryError(null);
+
+              toast.error(`Failed to regenerate summary`, {
+                description: `${errorMessage}. Your previous summary has been restored.`,
+              });
+
+              return;
+            }
+          } catch (error) {
+            console.error('Failed to reload summary after error:', error);
+          }
+
+          setSummaryError(errorMessage);
+          setSummaryStatus('error');
+
+          const isModelRequiredError = errorMessage.includes('model is required') ||
+            errorMessage.includes('"model":"required"') ||
+            errorMessage.toLowerCase().includes('model') && errorMessage.toLowerCase().includes('required');
+
+          toast.error('Failed to regenerate summary', {
+            description: errorMessage.includes('Connection refused')
+              ? 'Could not connect to LLM service. Please ensure Ollama or your configured LLM provider is running.'
+              : errorMessage,
+          });
+
+          if (isModelRequiredError && onOpenModelSettings) {
+            console.log('🔧 Model required error detected, opening model settings...');
+            onOpenModelSettings();
+          }
+
+          return;
+        }
+
+        // Handle successful completion
+        if (pollingResult.status === 'completed' && pollingResult.data) {
+          console.log('Summary regeneration completed:', pollingResult.data);
+
+          const meetingName = pollingResult.data.MeetingName || pollingResult.meetingName;
+          if (meetingName) {
+            updateMeetingTitle(meetingName);
+          }
+
+          if (pollingResult.data.markdown) {
+            console.log('Received markdown format from backend');
+            setAiSummary({ markdown: pollingResult.data.markdown } as any);
+            setSummaryStatus('completed');
+
+            toast.success('Summary regenerated successfully!', {
+              description: 'Your meeting summary is ready',
+              duration: 4000,
+            });
+
+            if (meetingName && onMeetingUpdated) {
+              await onMeetingUpdated();
+            }
+
+            return;
+          }
+
+          // Legacy format handling
+          const summarySections = Object.entries(pollingResult.data).filter(([key]) => key !== 'MeetingName');
+          const allEmpty = summarySections.every(([, section]) => !(section as any).blocks || (section as any).blocks.length === 0);
+
+          if (allEmpty) {
+            console.error('Summary regeneration completed but all sections empty');
+            setSummaryError('Summary regeneration completed but returned empty content.');
+            setSummaryStatus('error');
+
+            return;
+          }
+
+          const { MeetingName, ...summaryData } = pollingResult.data;
+
+          const formattedSummary: Summary = {};
+          const sectionKeys = pollingResult.data._section_order || Object.keys(summaryData);
+
+          for (const key of sectionKeys) {
+            try {
+              const section = summaryData[key];
+              if (section && typeof section === 'object' && 'title' in section && 'blocks' in section) {
+                const typedSection = section as { title?: string; blocks?: any[] };
+
+                if (Array.isArray(typedSection.blocks)) {
+                  formattedSummary[key] = {
+                    title: typedSection.title || key,
+                    blocks: typedSection.blocks.map((block: any) => ({
+                      ...block,
+                      color: 'default',
+                      content: block?.content?.trim() || ''
+                    }))
+                  };
+                } else {
+                  formattedSummary[key] = {
+                    title: typedSection.title || key,
+                    blocks: []
+                  };
+                }
+              }
+            } catch (error) {
+              console.warn(`Error processing section ${key}:`, error);
+            }
+          }
+
+          setAiSummary(formattedSummary);
+          setSummaryStatus('completed');
+
+          toast.success('Summary regenerated successfully!', {
+            description: 'Your meeting summary is ready',
+            duration: 4000,
+          });
+
+          if (meetingName && onMeetingUpdated) {
+            await onMeetingUpdated();
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Failed to regenerate summary:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setSummaryError(errorMessage);
+      setSummaryStatus('error');
+
+      toast.error('Failed to regenerate summary', {
+        description: errorMessage,
+      });
+    }
+  }, [
+    meeting.id,
+    modelConfig,
+    selectedTemplate,
+    isModelConfigLoading,
+    fetchAllTranscripts,
+    startSummaryPolling,
+    setAiSummary,
+    updateMeetingTitle,
+    onMeetingUpdated,
+    onOpenModelSettings,
+  ]);
 
   // Public API: Stop ongoing summary generation
   const handleStopGeneration = useCallback(async () => {

@@ -26,21 +26,21 @@ export function EmptyStateNudge({ onClose }: EmptyStateNudgeProps) {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-[400px] p-8 animate-in fade-in duration-300">
-      <div className="max-w-md w-full bg-white rounded-lg border border-gray-200 shadow-sm p-8 space-y-6">
+    <div className="flex flex-col items-center justify-center min-h-[280px] md:min-h-[400px] p-8 animate-in fade-in duration-300">
+      <div className="max-w-md w-full bg-[var(--card)] rounded-lg border border-[var(--border)] shadow-sm p-8 space-y-6">
         {/* Icon */}
         <div className="flex justify-center">
-          <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center">
-            <Download className="w-8 h-8 text-gray-600" />
+          <div className="w-16 h-16 rounded-full bg-[var(--muted)] flex items-center justify-center">
+            <Download className="w-8 h-8 text-[var(--muted-foreground)]" />
           </div>
         </div>
 
         {/* Title */}
         <div className="text-center space-y-2">
-          <h2 className="text-xl font-semibold text-gray-900">
+          <h2 className="text-xl font-semibold text-[var(--foreground)]">
             Download AI Models
           </h2>
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-[var(--muted-foreground)]">
             Download AI models to start transcribing meetings. This takes a few minutes.
           </p>
         </div>
@@ -50,7 +50,7 @@ export function EmptyStateNudge({ onClose }: EmptyStateNudgeProps) {
           <Button
             onClick={handleDownload}
             disabled={isDownloading}
-            className="w-full h-11 bg-gray-900 hover:bg-gray-800 text-white disabled:opacity-50"
+            className="w-full h-11 bg-[var(--primary)] hover:bg-[var(--primary)]/90 text-[var(--primary-foreground)] disabled:opacity-50"
           >
             {isDownloading ? (
               <>
@@ -68,7 +68,7 @@ export function EmptyStateNudge({ onClose }: EmptyStateNudgeProps) {
           {onClose && (
             <button
               onClick={onClose}
-              className="w-full text-sm text-gray-500 hover:text-gray-700 transition-colors"
+              className="w-full text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
             >
               Skip for now
             </button>
@@ -76,8 +76,8 @@ export function EmptyStateNudge({ onClose }: EmptyStateNudgeProps) {
         </div>
 
         {/* Info */}
-        <div className="pt-4 border-t border-gray-100">
-          <div className="flex items-start gap-3 text-xs text-gray-500">
+        <div className="pt-4 border-t border-[var(--border)]">
+          <div className="flex items-start gap-3 text-xs text-[var(--muted-foreground)]">
             <Sparkles className="w-4 h-4 flex-shrink-0 mt-0.5" />
             <p>
               All AI processing happens locally on your device. Your data never leaves your computer.

@@ -98,7 +98,7 @@ export default function NotesPage() {
             <div
               key={meeting.meeting_id}
               onClick={() => router.push(`/notes/${meeting.meeting_id}`)}
-              className="group p-4 bg-white border border-gray-200 rounded-lg hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer"
+              className="group p-4 bg-[var(--card)] border border-[var(--border)] rounded-lg hover:border-[var(--accent)]/30 hover:shadow-sm transition-all cursor-pointer"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">

@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { invoke } from '@tauri-apps/api/core';
 import { useRecordingState } from '@/contexts/RecordingStateContext';
+import { useMediaQuery, VIEWPORT_BREAKPOINTS } from '@/hooks/useMediaQuery';
 
 
 interface SidebarItem {
@@ -88,7 +89,19 @@ export const useSidebar = () => {
 
 export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const [currentMeeting, setCurrentMeeting] = useState<CurrentMeeting | null>({ id: 'intro-call', title: '+ New Call' });
-  const [isCollapsed, setIsCollapsed] = useState(true);
+  // Initialize sidebar state from localStorage, fallback to viewport-based default
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('sidebar-collapsed');
+      if (saved !== null) {
+        return saved === 'true';
+      }
+      // No saved preference: default to collapsed on compact viewports
+      return window.matchMedia(VIEWPORT_BREAKPOINTS.compact).matches;
+    }
+    return true;
+  });
+  const isCompact = useMediaQuery(VIEWPORT_BREAKPOINTS.compact);
   const [meetings, setMeetings] = useState<CurrentMeeting[]>([]);
   const [sidebarItems, setSidebarItems] = useState<SidebarItem[]>([]);
   const [isMeetingActive, setIsMeetingActive] = useState(false);
@@ -154,9 +167,19 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 
 
   const toggleCollapse = () => {
-    setIsCollapsed(!isCollapsed);
+    const newValue = !isCollapsed;
+    setIsCollapsed(newValue);
+    localStorage.setItem('sidebar-collapsed', String(newValue));
   };
 
+  // Auto-collapse sidebar on compact viewports ONLY if user has no saved preference.
+  // Once user manually toggles, their preference is persisted and respected.
+  useEffect(() => {
+    const saved = localStorage.getItem('sidebar-collapsed');
+    if (saved === null && isCompact) {
+      setIsCollapsed(true);
+    }
+  }, [isCompact]);
   // Update current meeting when on home page
   useEffect(() => {
     if (pathname === '/') {

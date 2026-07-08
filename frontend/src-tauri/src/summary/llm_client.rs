@@ -103,6 +103,7 @@ impl LLMProvider {
 /// * `top_p` - Optional top_p override
 /// * `top_k` - Optional top_k override (LocalLLM only)
 /// * `cancellation_token` - Optional token to cancel the request
+/// * `streaming_callback` - Optional callback for streaming tokens (LocalLLM only)
 ///
 /// # Returns
 /// The generated summary text or an error message
@@ -121,6 +122,7 @@ pub async fn generate_summary(
     top_k: Option<i32>,
     _app_data_dir: Option<&PathBuf>,
     cancellation_token: Option<&CancellationToken>,
+    streaming_callback: Option<std::sync::Arc<dyn Fn(&str) + Send + Sync>>,
 ) -> Result<String, String> {
     // Check if cancelled before starting
     if let Some(token) = cancellation_token {
@@ -171,6 +173,7 @@ pub async fn generate_summary(
                 top_k: top_k.unwrap_or(40),
                 repeat_penalty: 1.1,
                 context_size,
+                streaming_callback,
             };
 
             // Run inference asynchronously

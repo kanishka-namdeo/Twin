@@ -4,7 +4,7 @@
 
 @theme {
   /* Typography — dual-font system */
-  --font-sans: var(--font-source-sans-3);
+  --font-sans: var(--font-inter);
   --font-display: var(--font-calistoga);
   --font-mono: var(--font-jetbrains-mono);
 

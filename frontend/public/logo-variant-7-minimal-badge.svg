@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="badge-gradient" x1="0%" y1="0%" x2="135%" y2="100%">
+      <stop offset="0%" stop-color="#0052FF" />
+      <stop offset="100%" stop-color="#4D7CFF" />
+    </linearGradient>
+  </defs>
+  
+  <style>
+    .gradient { fill: url(#badge-gradient); }
+    .surface { fill: #FFFFFF; }
+    
+    @media (prefers-color-scheme: dark) {
+      .surface { fill: #0F172A; }
+    }
+  </style>
+  
+  <!-- Minimal badge concept: Subtle T with badge shape -->
+  <g id="logo-mark">
+    <!-- Badge background -->
+    <path d="M50,10 L90,30 L90,70 L50,90 L10,70 L10,30 Z" class="gradient" />
+    
+    <!-- Inner badge border -->
+    <path d="M50,20 L80,36 L80,64 L50,80 L20,64 L20,36 Z" class="surface" opacity="0.15" />
+    
+    <!-- Minimal "T" indicator -->
+    <path d="M35,40 L65,40" class="surface" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.9" />
+    <path d="M50,40 L50,65" class="surface" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.9" />
+  </g>
+</svg>

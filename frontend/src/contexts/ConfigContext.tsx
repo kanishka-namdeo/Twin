@@ -350,8 +350,28 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
     setisAutoSummary(checked);
     if (typeof window !== 'undefined') {
       localStorage.setItem('isAutoSummary', checked.toString());
+      // Persist to backend
+      invoke('api_save_auto_summarize_enabled', { enabled: checked }).catch((err) => {
+        console.error('Failed to save auto-summarize setting:', err);
+      });
     }
   }, [])
+
+  // Load auto-summarize setting from backend on mount
+  useEffect(() => {
+    const loadAutoSummarize = async () => {
+      try {
+        const enabled = await invoke<boolean>('api_get_auto_summarize_enabled');
+        setisAutoSummary(enabled);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('isAutoSummary', enabled.toString());
+        }
+      } catch (err) {
+        console.error('Failed to load auto-summarize setting:', err);
+      }
+    };
+    loadAutoSummarize();
+  }, []);
 
   // Toggle beta feature with localStorage persistence
   const toggleBetaFeature = useCallback((featureKey: BetaFeatureKey, enabled: boolean) => {

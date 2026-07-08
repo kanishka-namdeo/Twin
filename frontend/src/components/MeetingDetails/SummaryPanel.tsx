@@ -21,6 +21,7 @@ import {
   SummaryLanguageStorage,
 } from '@/lib/summary-language-preferences';
 import { Slider } from '@/components/ui/slider';
+import { listen } from '@tauri-apps/api/event';
 
 export interface GenerationParams {
   temperature: number;
@@ -157,6 +158,148 @@ export function SummaryPanel({
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
 
   const isLocalLLM = modelConfig.provider === 'local-llm';
+
+  // Streaming state
+  const [streamingTokens, setStreamingTokens] = useState<string>('');
+  const [isStreaming, setIsStreaming] = useState(false);
+  const streamingBufferRef = useRef<string>('');
+
+  // Inference progress metrics
+  const [inferenceProgress, setInferenceProgress] = useState<{
+    tokens_generated: number;
+    tokens_per_second: number;
+    estimated_remaining_seconds: number | null;
+  } | null>(null);
+  const [inferenceComplete, setInferenceComplete] = useState<{
+    tokens_generated: number;
+    tokens_per_second: number;
+    total_duration_seconds: number;
+  } | null>(null);
+
+  // Quality score from summary result
+  const [qualityScore, setQualityScore] = useState<number | null>(null);
+
+  // Model capability warning
+  const [modelCapabilityWarning, setModelCapabilityWarning] = useState<{
+    transcript_tokens: number;
+    model_context_window: number;
+    model_name: string;
+    warning: string;
+  } | null>(null);
+
+  // Listen for streaming tokens from backend
+  useEffect(() => {
+    if (!isLocalLLM) return;
+
+    const unlisten = listen<{ token: string; meeting_id: string }>(
+      'summary-token-stream',
+      (event) => {
+        // Only process tokens for the current meeting
+        if (event.payload.meeting_id === meeting.id) {
+          streamingBufferRef.current += event.payload.token;
+          setStreamingTokens(streamingBufferRef.current);
+          setIsStreaming(true);
+        }
+      }
+    );
+
+    return () => {
+      unlisten.then((unlistenFn) => unlistenFn());
+    };
+  }, [isLocalLLM, meeting.id]);
+
+  // Listen for inference progress metrics
+  useEffect(() => {
+    if (!isLocalLLM) return;
+
+    const unlistenProgress = listen<{
+      tokens_generated: number;
+      tokens_per_second: number;
+      estimated_remaining_seconds: number | null;
+      meeting_id: string;
+    }>('llm-inference-progress', (event) => {
+      if (event.payload.meeting_id === meeting.id) {
+        setInferenceProgress({
+          tokens_generated: event.payload.tokens_generated,
+          tokens_per_second: event.payload.tokens_per_second,
+          estimated_remaining_seconds: event.payload.estimated_remaining_seconds,
+        });
+      }
+    });
+
+    const unlistenComplete = listen<{
+      tokens_generated: number;
+      tokens_per_second: number;
+      total_duration_seconds: number;
+      meeting_id: string;
+    }>('llm-inference-complete', (event) => {
+      if (event.payload.meeting_id === meeting.id) {
+        setInferenceComplete({
+          tokens_generated: event.payload.tokens_generated,
+          tokens_per_second: event.payload.tokens_per_second,
+          total_duration_seconds: event.payload.total_duration_seconds,
+        });
+        setInferenceProgress(null);
+      }
+    });
+
+    return () => {
+      unlistenProgress.then((fn) => fn());
+      unlistenComplete.then((fn) => fn());
+    };
+  }, [isLocalLLM, meeting.id]);
+
+  // Listen for model capability warnings (transcript too long for model)
+  useEffect(() => {
+    const unlistenWarning = listen<{
+      meeting_id: string;
+      transcript_tokens: number;
+      model_context_window: number;
+      model_name: string;
+      warning: string;
+    }>('model-capability-warning', (event) => {
+      if (event.payload.meeting_id === meeting.id) {
+        setModelCapabilityWarning(event.payload);
+        toast.warning('Model capacity warning', {
+          description: event.payload.warning,
+          duration: 8000,
+        });
+      }
+    });
+
+    return () => {
+      unlistenWarning.then((fn) => fn());
+    };
+  }, [meeting.id]);
+
+  // Extract quality score from summary response when it changes
+  useEffect(() => {
+    if (summaryResponse?.data && typeof summaryResponse.data === 'object') {
+      const score = summaryResponse.data.quality_score;
+      if (typeof score === 'number') {
+        setQualityScore(score);
+      } else {
+        setQualityScore(null);
+      }
+    } else {
+      setQualityScore(null);
+    }
+  }, [summaryResponse]);
+
+  // Reset streaming state when summary generation completes
+  useEffect(() => {
+    if (summaryStatus === 'completed' || summaryStatus === 'error' || summaryStatus === 'idle') {
+      setStreamingTokens('');
+      setIsStreaming(false);
+      streamingBufferRef.current = '';
+      setInferenceProgress(null);
+      // Keep inferenceComplete visible until next generation starts
+    }
+    if (summaryStatus === 'processing' || summaryStatus === 'summarizing' || summaryStatus === 'regenerating') {
+      setInferenceComplete(null);
+      setInferenceProgress(null);
+    }
+  }, [summaryStatus]);
 
   const handleGenerationParamChange = (key: keyof GenerationParams, value: number) => {
     const updated = { ...generationParams, [key]: value };
@@ -449,6 +592,7 @@ export function SummaryPanel({
                 setModelConfig={setModelConfig}
                 onSaveModelConfig={onSaveModelConfig}
                 onGenerateSummary={handleGenerateSummaryWithParams}
+                onRegenerateSummary={handleRegenerateSummaryWithParams}
                 onStopGeneration={onStopGeneration}
                 customPrompt={customPrompt}
                 summaryStatus={summaryStatus}
@@ -499,13 +643,52 @@ export function SummaryPanel({
               advancedOptionsSlot={advancedOptionsSlot}
             />
           </div>
-          {/* Loading spinner */}
-          <div className="flex items-center justify-center flex-1">
-            <div className="text-center">
-              <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
-              <p className="text-gray-600">Generating AI Summary...</p>
+          {/* Streaming output or loading spinner */}
+          {isStreaming && streamingTokens ? (
+            <div className="flex-1 overflow-y-auto px-6 pb-6">
+              <div className="max-w-4xl mx-auto">
+                {isLocalLLM && inferenceProgress && (
+                  <div className="mb-3 flex items-center gap-3 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+                    <span className="font-medium text-blue-600">{inferenceProgress.tokens_per_second} tok/s</span>
+                    <span>•</span>
+                    <span>{inferenceProgress.tokens_generated} tokens</span>
+                    {inferenceProgress.estimated_remaining_seconds !== null && (
+                      <>
+                        <span>•</span>
+                        <span>~{Math.round(inferenceProgress.estimated_remaining_seconds)}s remaining</span>
+                      </>
+                    )}
+                  </div>
+                )}
+                <div className="prose prose-sm max-w-none">
+                  <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                    {streamingTokens}
+                    <span className="inline-block w-2 h-4 ml-1 bg-blue-500 animate-pulse" />
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex items-center justify-center flex-1">
+              <div className="text-center">
+                <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
+                <p className="text-gray-600">Generating AI Summary...</p>
+                {isLocalLLM && inferenceProgress && (
+                  <div className="mt-3 text-xs text-gray-500">
+                    <span className="font-medium text-blue-600">{inferenceProgress.tokens_per_second} tok/s</span>
+                    <span className="mx-2">•</span>
+                    <span>{inferenceProgress.tokens_generated} tokens</span>
+                    {inferenceProgress.estimated_remaining_seconds !== null && (
+                      <>
+                        <span className="mx-2">•</span>
+                        <span>~{Math.round(inferenceProgress.estimated_remaining_seconds)}s remaining</span>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       ) : !aiSummary ? (
         <div className="flex flex-col h-full">
@@ -607,6 +790,42 @@ export function SummaryPanel({
                 'bg-blue-100 text-blue-700'
               }`}>
               <p className="text-sm font-medium">{getSummaryStatusMessage(summaryStatus)}</p>
+              {summaryStatus === 'completed' && inferenceComplete && isLocalLLM && (
+                <div className="mt-2 text-xs text-green-700 space-y-1">
+                  <div className="flex items-center gap-3">
+                    <span className="font-medium">{inferenceComplete.tokens_generated} tokens</span>
+                    <span>•</span>
+                    <span>{inferenceComplete.tokens_per_second} tok/s</span>
+                    <span>•</span>
+                    <span>{inferenceComplete.total_duration_seconds}s total</span>
+                  </div>
+                </div>
+              )}
+              {summaryStatus === 'completed' && qualityScore !== null && (
+                <div className="mt-3 pt-3 border-t border-green-200">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-green-800">Summary Quality:</span>
+                    <div className="flex items-center gap-1">
+                      {[1, 2, 3, 4, 5].map((star) => (
+                        <span
+                          key={star}
+                          className={`text-lg ${star <= qualityScore ? 'text-yellow-500' : 'text-gray-300'}`}
+                        >
+                          ★
+                        </span>
+                      ))}
+                      <span className="text-xs font-semibold text-green-800 ml-1">
+                        {qualityScore}/5
+                      </span>
+                    </div>
+                  </div>
+                  {qualityScore < 3 && (
+                    <p className="mt-2 text-xs text-orange-700 bg-orange-50 p-2 rounded">
+                      ⚠️ This summary may be incomplete or low quality. Consider regenerating with a larger model or cloud provider for better results.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

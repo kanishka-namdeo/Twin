@@ -1,11 +1,13 @@
 use crate::database::repositories::{
     meeting::MeetingsRepository, setting::SettingsRepository, summary::SummaryProcessesRepository,
+    transcript::TranscriptsRepository,
 };
 use crate::summary::llm_client::LLMProvider;
 use crate::summary::language_detection::detect_summary_language;
 use crate::summary::metadata::read_detected_summary_language_from_metadata;
 use crate::summary::processor::{
     extract_meeting_name_from_markdown, generate_meeting_summary, language_name_from_code,
+    rough_token_count,
 };
 use crate::summary::templates::{self, Template};
 use crate::ollama::metadata::ModelMetadataCache;
@@ -15,7 +17,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 use once_cell::sync::Lazy;
@@ -28,6 +30,37 @@ static METADATA_CACHE: Lazy<ModelMetadataCache> = Lazy::new(|| {
 // Global registry for cancellation tokens (thread-safe)
 static CANCELLATION_REGISTRY: Lazy<Arc<Mutex<HashMap<String, CancellationToken>>>> =
     Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
+// Global HTTP client singleton to prevent connection pool exhaustion
+static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(reqwest::Client::new);
+
+/// Tracks inference progress metrics for emitting periodic events
+struct InferenceProgressState {
+    tokens_generated: u32,
+    start_time: Instant,
+    last_emit_time: Option<Instant>,
+}
+
+impl InferenceProgressState {
+    fn new() -> Self {
+        Self {
+            tokens_generated: 0,
+            start_time: Instant::now(),
+            last_emit_time: None,
+        }
+    }
+
+    fn record_token(&mut self) {
+        self.tokens_generated += 1;
+    }
+
+    /// Returns true if 500ms have elapsed since last emit (or if never emitted)
+    fn should_emit_progress(&self) -> bool {
+        match self.last_emit_time {
+            None => true,
+            Some(last) => last.elapsed() >= Duration::from_millis(500),
+        }
+    }
+}
 
 /// Strips the first `#` heading line; returns "" if no `#` is found.
 fn strip_leading_title(markdown: &str) -> String {
@@ -139,9 +172,11 @@ fn build_summary_result_json(
     english_markdown: &str,
     source: SummaryCacheSource,
     output_language: Option<&str>,
+    quality_score: u8,
 ) -> serde_json::Value {
     serde_json::json!({
         "markdown": strip_title_if_present(final_markdown),
+        "quality_score": quality_score,
         ENGLISH_CACHE_FIELD: EnglishSummaryCache {
             markdown: english_markdown.to_string(),
             source,
@@ -223,6 +258,269 @@ impl SummaryService {
                 info!("Cleaned up cancellation token for meeting: {}", meeting_id);
             }
         }
+    }
+
+    /// Auto-generates a summary for a meeting after recording stops
+    ///
+    /// This method is called automatically when a recording ends if auto-summarize is enabled.
+    /// It loads the transcript, uses the last-used template and parameters, and triggers
+    /// background summary generation.
+    pub async fn auto_summarize_meeting<R: tauri::Runtime>(
+        app: AppHandle<R>,
+        pool: SqlitePool,
+        meeting_id: &str,
+    ) -> Result<(), String> {
+        info!("Auto-summarizing meeting: {}", meeting_id);
+
+        // Load transcript for this meeting
+        let transcript = match TranscriptsRepository::get_transcripts_for_meeting(&pool, meeting_id).await {
+            Ok(transcripts) => {
+                if transcripts.is_empty() {
+                    warn!("No transcripts found for meeting {}, skipping auto-summarize", meeting_id);
+                    return Err("No transcripts available".to_string());
+                }
+                // Concatenate all transcript segments
+                transcripts.into_iter()
+                    .map(|t| t.transcript)
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            }
+            Err(e) => {
+                error!("Failed to load transcripts for auto-summarize: {}", e);
+                return Err(format!("Failed to load transcripts: {}", e));
+            }
+        };
+
+        // Get current model config to use for summarization
+        let config = match SettingsRepository::get_model_config(&pool).await {
+            Ok(Some(config)) => config,
+            Ok(None) => {
+                warn!("No model config found, using defaults");
+                // Return default config
+                crate::database::models::Setting {
+                    id: "1".to_string(),
+                    provider: "openai".to_string(),
+                    model: "gpt-4o-mini".to_string(),
+                    whisper_model: "large-v3".to_string(),
+                    openai_api_key: None,
+                    anthropic_api_key: None,
+                    ollama_api_key: None,
+                    ollama_endpoint: None,
+                    custom_openai_config: None,
+                    auto_summarize_enabled: 1,
+                }
+            }
+            Err(e) => {
+                error!("Failed to load model config: {}", e);
+                return Err(format!("Failed to load model config: {}", e));
+            }
+        };
+
+        // Use default template and parameters
+        let template_id = "standard_meeting".to_string();
+        let custom_prompt = "".to_string();
+        let summary_language = None;
+        let max_tokens = None;
+        let temperature = None;
+        let top_p = None;
+        let top_k = None;
+
+        info!("Auto-summarize: using provider={}, model={}, template={}", 
+              config.provider, config.model, template_id);
+
+        // Create or reset the process entry
+        if let Err(e) = SummaryProcessesRepository::create_or_reset_process(&pool, meeting_id).await {
+            error!("Failed to create summary process: {}", e);
+            return Err(format!("Failed to create summary process: {}", e));
+        }
+
+        // Spawn background task for processing
+        let meeting_id_clone = meeting_id.to_string();
+        tauri::async_runtime::spawn(async move {
+            Self::process_transcript_background(
+                app,
+                pool,
+                meeting_id_clone,
+                transcript,
+                config.provider,
+                config.model,
+                custom_prompt,
+                template_id,
+                summary_language,
+                max_tokens,
+                temperature,
+                top_p,
+                top_k,
+            )
+            .await;
+        });
+
+        info!("Auto-summarize task spawned for meeting: {}", meeting_id);
+        Ok(())
+    }
+
+    /// Scores the quality of a generated summary
+    ///
+    /// Uses heuristic analysis to evaluate summary quality:
+    /// - Section presence (Key Points, Action Items, Decisions, etc.)
+    /// - Length appropriateness (not too short, not too long)
+    /// - Keyword coverage from transcript
+    ///
+    /// Returns a score from 0-5 where:
+    /// - 5: Excellent (all sections present, good length, high keyword coverage)
+    /// - 4: Good (most sections present, appropriate length)
+    /// - 3: Fair (some sections present, acceptable length)
+    /// - 2: Poor (missing sections or poor length)
+    /// - 1: Very poor (minimal content)
+    /// - 0: Failed (empty or invalid)
+    pub fn score_summary_quality(summary_markdown: &str, transcript_text: &str) -> u8 {
+        if summary_markdown.trim().is_empty() {
+            return 0;
+        }
+
+        let mut score = 0u8;
+
+        // 1. Check for key sections (max 2 points)
+        let sections = [
+            "key points", "action items", "decisions", "summary",
+            "attendees", "next steps", "discussion", "agenda"
+        ];
+        let summary_lower = summary_markdown.to_lowercase();
+        let section_count = sections.iter()
+            .filter(|&&section| summary_lower.contains(section))
+            .count();
+
+        match section_count {
+            4..=8 => score += 2,
+            2..=3 => score += 1,
+            _ => {}
+        }
+
+        // 2. Check length appropriateness (max 2 points)
+        let summary_words = summary_markdown.split_whitespace().count();
+        let transcript_words = transcript_text.split_whitespace().count();
+
+        // Summary should be 5-20% of transcript length, with reasonable absolute bounds
+        let ratio = if transcript_words > 0 {
+            summary_words as f32 / transcript_words as f32
+        } else {
+            0.0
+        };
+
+        if summary_words >= 100 && summary_words <= 2000 {
+            if ratio >= 0.05 && ratio <= 0.20 {
+                score += 2; // Ideal length
+            } else if ratio >= 0.03 && ratio <= 0.30 {
+                score += 1; // Acceptable length
+            }
+        } else if summary_words >= 50 {
+            score += 1; // At least has some content
+        }
+
+        // 3. Check keyword coverage (max 1 point)
+        // Extract important words from transcript (simple heuristic: words > 5 chars)
+        let transcript_keywords: std::collections::HashSet<String> = transcript_text
+            .split_whitespace()
+            .filter(|w| w.len() > 5)
+            .map(|w| w.to_lowercase())
+            .take(100) // Sample first 100 keywords
+            .collect();
+
+        let summary_keywords: std::collections::HashSet<String> = summary_markdown
+            .split_whitespace()
+            .filter(|w| w.len() > 5)
+            .map(|w| w.to_lowercase())
+            .collect();
+
+        let overlap = transcript_keywords.intersection(&summary_keywords).count();
+        let coverage = if !transcript_keywords.is_empty() {
+            overlap as f32 / transcript_keywords.len() as f32
+        } else {
+            0.0
+        };
+
+        if coverage >= 0.10 {
+            score += 1; // Good keyword coverage
+        }
+
+        info!("Summary quality score: {}/5 (sections: {}, length: {} words, keyword coverage: {:.1}%)",
+              score, section_count, summary_words, coverage * 100.0);
+
+        score
+    }
+
+    /// Checks if the transcript is appropriate for the selected model's context window
+    ///
+    /// Analyzes transcript length and compares it to the model's context window.
+    /// Emits a warning event if the transcript exceeds 80% of the context window.
+    ///
+    /// Returns a warning message if the transcript is too long, None otherwise.
+    pub async fn check_transcript_capacity<R: tauri::Runtime>(
+        app: &AppHandle<R>,
+        pool: &SqlitePool,
+        meeting_id: &str,
+        model_provider: &str,
+        model_name: &str,
+    ) -> Option<String> {
+        // Load transcript for this meeting
+        let transcript = match TranscriptsRepository::get_transcripts_for_meeting(pool, meeting_id).await {
+            Ok(transcripts) => {
+                transcripts.into_iter()
+                    .map(|t| t.transcript)
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            }
+            Err(e) => {
+                warn!("Failed to load transcripts for capacity check: {}", e);
+                return None;
+            }
+        };
+
+        let transcript_tokens = rough_token_count(&transcript);
+
+        // Get model context window
+        let context_window = if model_provider == "ollama" {
+            match METADATA_CACHE.get_or_fetch(model_name, None).await {
+                Ok(metadata) => metadata.context_size,
+                Err(e) => {
+                    warn!("Failed to fetch context for {}: {}, using default 4096", model_name, e);
+                    4096
+                }
+            }
+        } else if model_provider == "local-llm" {
+            // Local LLM models typically have 4096 context
+            4096
+        } else {
+            // Cloud providers have large context windows
+            128000
+        };
+
+        // Check if transcript exceeds 80% of context window
+        let threshold = (context_window as f32 * 0.8) as usize;
+
+        if transcript_tokens > threshold {
+            let warning = format!(
+                "This meeting has {} tokens. {} may struggle with this length (context: {} tokens). Consider using a cloud provider or a model with larger context.",
+                transcript_tokens, model_name, context_window
+            );
+
+            warn!("Transcript capacity warning: {}", warning);
+
+            // Emit warning event to frontend
+            let _ = app.emit("model-capability-warning", serde_json::json!({
+                "meeting_id": meeting_id,
+                "transcript_tokens": transcript_tokens,
+                "model_context_window": context_window,
+                "model_name": model_name,
+                "warning": warning,
+            }));
+
+            return Some(warning);
+        }
+
+        info!("Transcript capacity check passed: {} tokens vs {} context window", 
+              transcript_tokens, context_window);
+        None
     }
 
     async fn read_detected_summary_language(
@@ -493,7 +791,45 @@ impl SummaryService {
             }),
         };
 
-        let client = reqwest::Client::new();
+        // Create streaming callback for LocalLLM provider
+        let progress_state = Arc::new(Mutex::new(InferenceProgressState::new()));
+        let streaming_callback = if provider == LLMProvider::LocalLLM {
+            let app_clone = _app.clone();
+            let meeting_id_clone = meeting_id.clone();
+            let progress_clone = progress_state.clone();
+            Some(std::sync::Arc::new(move |token: &str| {
+                let meeting_id_str = meeting_id_clone.as_str();
+                // Emit streaming token event
+                let _ = app_clone.emit("summary-token-stream", serde_json::json!({
+                    "token": token,
+                    "meeting_id": meeting_id_clone,
+                }));
+                // Track and emit inference progress metrics
+                let mut state = progress_clone.lock().unwrap();
+                state.record_token();
+                if state.should_emit_progress() {
+                    let elapsed = state.start_time.elapsed().as_secs_f32();
+                    let tokens_per_second = state.tokens_generated as f32 / elapsed.max(0.001);
+                    let estimated_remaining = if tokens_per_second > 0.0 {
+                        // Estimate based on typical summary length of 2000 tokens
+                        let remaining_tokens = (2000.0_f32 - state.tokens_generated as f32).max(0.0);
+                        Some(remaining_tokens / tokens_per_second)
+                    } else {
+                        None
+                    };
+                    let _ = app_clone.emit("llm-inference-progress", serde_json::json!({
+                        "tokens_generated": state.tokens_generated,
+                        "tokens_per_second": (tokens_per_second * 10.0).round() / 10.0,
+                        "estimated_remaining_seconds": estimated_remaining.map(|v: f32| (v * 10.0).round() / 10.0),
+                        "meeting_id": meeting_id_str,
+                    }));
+                    state.last_emit_time = Some(Instant::now());
+                }
+            }) as std::sync::Arc<dyn Fn(&str) + Send + Sync>)
+        } else {
+            None
+        };
+        let client = &*HTTP_CLIENT;
         let result = generate_meeting_summary(
             &client,
             &provider,
@@ -515,10 +851,24 @@ impl SummaryService {
             summary_language.as_deref(),
             detected_summary_language.as_deref(),
             cached_english.as_deref(),
+            streaming_callback,
         )
         .await;
 
         let duration = start_time.elapsed().as_secs_f64();
+
+        // Emit inference complete event for LocalLLM with final metrics
+        if provider == LLMProvider::LocalLLM {
+            let state = progress_state.lock().unwrap();
+            let elapsed = state.start_time.elapsed().as_secs_f32();
+            let tokens_per_second = state.tokens_generated as f32 / elapsed.max(0.001);
+            let _ = _app.emit("llm-inference-complete", serde_json::json!({
+                "tokens_generated": state.tokens_generated,
+                "tokens_per_second": (tokens_per_second * 10.0).round() / 10.0,
+                "total_duration_seconds": (duration * 10.0).round() / 10.0,
+                "meeting_id": meeting_id,
+            }));
+        }
 
         // Clean up cancellation token regardless of outcome
         Self::cleanup_cancellation_token(&meeting_id);
@@ -544,11 +894,16 @@ impl SummaryService {
                     }
                 }
 
+                // Score summary quality
+                let quality_score = Self::score_summary_quality(&final_markdown, &text);
+                info!("Summary quality score for meeting {}: {}/5", meeting_id, quality_score);
+
                 let result_json = build_summary_result_json(
                     &final_markdown,
                     &english_markdown,
                     cache_source,
                     summary_language.as_deref(),
+                    quality_score,
                 );
 
                 // Update database with completed status
@@ -605,6 +960,62 @@ impl SummaryService {
                 meeting_id, e
             );
         }
+    }
+
+    /// Regenerates summary using cached transcript chunks with new generation parameters
+    pub async fn regenerate_summary<R: tauri::Runtime>(
+        _app: AppHandle<R>,
+        pool: SqlitePool,
+        meeting_id: String,
+        model_provider: String,
+        model_name: String,
+        custom_prompt: String,
+        template_id: String,
+        summary_language: Option<String>,
+        max_tokens: Option<u32>,
+        temperature: Option<f32>,
+        top_p: Option<f32>,
+        top_k: Option<i32>,
+    ) -> Result<(), String> {
+        info!(
+            "Regenerating summary for meeting_id: {} with new params",
+            meeting_id
+        );
+
+        // Load cached transcript text
+        let text = crate::database::repositories::transcript_chunk::TranscriptChunksRepository::get_transcript_text(&pool, &meeting_id)
+            .await
+            .map_err(|e| format!("Failed to load transcript chunks: {}", e))?
+            .ok_or_else(|| "No transcript chunks found for this meeting. Please generate a summary first.".to_string())?;
+
+        // Reset process state
+        SummaryProcessesRepository::create_or_reset_process(&pool, &meeting_id)
+            .await
+            .map_err(|e| format!("Failed to reset process: {}", e))?;
+
+        // Spawn background task for regeneration
+        let app_clone = _app.clone();
+        let meeting_id_clone = meeting_id.clone();
+        tauri::async_runtime::spawn(async move {
+            Self::process_transcript_background(
+                app_clone,
+                pool,
+                meeting_id_clone,
+                text,
+                model_provider,
+                model_name,
+                custom_prompt,
+                template_id,
+                summary_language,
+                max_tokens,
+                temperature,
+                top_p,
+                top_k,
+            )
+            .await;
+        });
+
+        Ok(())
     }
 }
 
@@ -754,6 +1165,7 @@ mod tests {
             "# Meeting\n## Points\nHello",
             source.clone(),
             Some("fr"),
+            4,
         )
         .to_string();
 
@@ -771,6 +1183,7 @@ mod tests {
             "# Meeting\n## Points\nHello",
             source.clone(),
             Some("fr"),
+            4,
         )
         .to_string();
 
@@ -789,6 +1202,7 @@ mod tests {
             "# Meeting\n## Points\nHello",
             source,
             Some("fr"),
+            4,
         )
         .to_string();
 
@@ -909,6 +1323,7 @@ mod tests {
             "# Meeting\n## Points\nHello",
             source.clone(),
             Some("fr"),
+            4,
         )
         .to_string();
 
@@ -931,6 +1346,7 @@ mod tests {
             "# Meeting\n## Points\nHello",
             source.clone(),
             Some("fr"),
+            4,
         )
         .to_string();
 
@@ -952,6 +1368,7 @@ mod tests {
             "# English Title\n## Decisions\nDone",
             sample_cache_source(),
             Some("fr"),
+            4,
         );
 
         assert_eq!(result["markdown"], "## Decisions\nDone");

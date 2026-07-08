@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="signature-gradient" x1="0%" y1="0%" x2="135%" y2="100%">
+      <stop offset="0%" stop-color="#0052FF" />
+      <stop offset="100%" stop-color="#4D7CFF" />
+    </linearGradient>
+  </defs>
+  
+  <style>
+    .gradient { fill: url(#signature-gradient); }
+    .surface { fill: #FFFFFF; }
+    
+    @media (prefers-color-scheme: dark) {
+      .surface { fill: #0F172A; }
+    }
+  </style>
+  
+  <!-- Dual-tone T concept: Clean, professional with signature gradient -->
+  <g id="logo-mark">
+    <!-- Outer rounded square -->
+    <rect x="10" y="10" width="80" height="80" rx="16" class="gradient" />
+    
+    <!-- Inner cutout creating "T" shape -->
+    <path d="M30,25 L70,25 L70,35 L55,35 L55,75 L45,75 L45,35 L30,35 Z" 
+          class="surface" fill-rule="evenodd" />
+  </g>
+</svg>

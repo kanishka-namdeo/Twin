@@ -1,3 +1,8 @@
+use once_cell::sync::Lazy;
+
+/// Global HTTP client singleton to prevent connection pool exhaustion.
+/// Reused across all HTTP requests in the application.
+pub static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(reqwest::Client::new);
 pub fn format_timestamp(seconds: f64) -> String {
     let total_seconds = seconds as u64;
     let hours = total_seconds / 3600;

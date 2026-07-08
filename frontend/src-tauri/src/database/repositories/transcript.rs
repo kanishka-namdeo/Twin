@@ -1,4 +1,5 @@
 use crate::api::{TranscriptSearchResult, TranscriptSegment};
+use crate::database::models::Transcript;
 use chrono::Utc;
 use sqlx::{Connection, Error as SqlxError, SqlitePool};
 use tracing::{error, info};
@@ -143,5 +144,20 @@ impl TranscriptsRepository {
             }
             None => transcript.chars().take(200).collect(), // Fallback to the start of the transcript
         }
+    }
+
+    /// Gets all transcripts for a specific meeting
+    pub async fn get_transcripts_for_meeting(
+        pool: &SqlitePool,
+        meeting_id: &str,
+    ) -> Result<Vec<Transcript>, SqlxError> {
+        let transcripts = sqlx::query_as::<_, Transcript>(
+            "SELECT * FROM transcripts WHERE meeting_id = ? ORDER BY audio_start_time ASC",
+        )
+        .bind(meeting_id)
+        .fetch_all(pool)
+        .await?;
+
+        Ok(transcripts)
     }
 }

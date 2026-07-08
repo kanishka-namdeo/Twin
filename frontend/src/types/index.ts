@@ -63,6 +63,11 @@ export interface SummaryResponse {
     completion_tokens: number;
     total_tokens: number;
   };
+  data?: {
+    markdown?: string;
+    quality_score?: number;
+    english_cache?: any;
+  };
 }
 
 // BlockNote-specific types

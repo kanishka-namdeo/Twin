@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <style>
+    .primary { fill: #0052FF; }
+    .secondary { fill: #4D7CFF; }
+    .surface { fill: #FFFFFF; }
+    .accent { fill: #10B981; }
+    
+    @media (prefers-color-scheme: dark) {
+      .primary { fill: #4D7CFF; }
+      .secondary { fill: #60A5FA; }
+      .surface { fill: #0F172A; }
+      .accent { fill: #34D399; }
+    }
+  </style>
+  
+  <!-- Sound wave concept: Audio transcription theme -->
+  <g id="logo-mark">
+    <!-- Central circle (recording indicator) -->
+    <circle cx="50" cy="50" r="12" class="primary" />
+    
+    <!-- Sound waves radiating outward -->
+    <path d="M35,50 Q25,50 25,40" class="secondary" stroke-width="3" fill="none" opacity="0.7" />
+    <path d="M65,50 Q75,50 75,60" class="secondary" stroke-width="3" fill="none" opacity="0.7" />
+    
+    <!-- Outer sound wave arcs -->
+    <path d="M30,30 A30,30 0 0,0 30,70" class="primary" stroke-width="2.5" fill="none" opacity="0.5" />
+    <path d="M70,30 A30,30 0 0,1 70,70" class="primary" stroke-width="2.5" fill="none" opacity="0.5" />
+    
+    <!-- Inner glow effect -->
+    <circle cx="50" cy="50" r="8" class="surface" opacity="0.4" />
+  </g>
+</svg>

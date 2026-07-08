@@ -450,3 +450,103 @@ pub async fn api_cancel_summary<R: Runtime>(
         }))
     }
 }
+
+/// Regenerates summary using cached transcript chunks with new generation parameters
+///
+/// This command reuses the existing transcript chunks from the database and regenerates
+/// the summary with different parameters (temperature, top_p, top_k, max_tokens).
+/// Returns immediately with process_id after spawning a background task.
+#[tauri::command]
+pub async fn api_regenerate_summary<R: Runtime>(
+    app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+    meeting_id: String,
+    model: String,
+    model_name: String,
+    custom_prompt: Option<String>,
+    template_id: Option<String>,
+    summary_language: Option<String>,
+    max_tokens: Option<u32>,
+    temperature: Option<f32>,
+    top_p: Option<f32>,
+    top_k: Option<i32>,
+    _auth_token: Option<String>,
+) -> Result<ProcessTranscriptResponse, String> {
+    log_info!(
+        "api_regenerate_summary (native) called for meeting_id: {}, model: {}",
+        &meeting_id,
+        &model
+    );
+
+    let pool = state.db_manager.pool().clone();
+    let final_prompt = custom_prompt.unwrap_or_else(|| "".to_string());
+    let final_template_id = template_id.unwrap_or_else(|| "daily_standup".to_string());
+
+    // Normalise empty / whitespace-only to None
+    let summary_language = summary_language.and_then(|s| {
+        let t = s.trim();
+        if t.is_empty() { None } else { Some(t.to_string()) }
+    });
+
+    // Regenerate summary using cached transcript chunks
+    SummaryService::regenerate_summary(
+        app,
+        pool,
+        meeting_id.clone(),
+        model,
+        model_name,
+        final_prompt,
+        final_template_id,
+        summary_language,
+        max_tokens,
+        temperature,
+        top_p,
+        top_k,
+    )
+    .await?;
+
+    log_info!("🚀 Background task spawned for regeneration: {}", &meeting_id);
+
+    Ok(ProcessTranscriptResponse {
+        message: "Summary regeneration started".to_string(),
+        process_id: meeting_id,
+    })
+}
+
+/// Gets the auto-summarize setting
+#[tauri::command]
+pub async fn api_get_auto_summarize_enabled<R: Runtime>(
+    _app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+) -> Result<bool, String> {
+    let pool = state.db_manager.pool();
+    crate::database::repositories::setting::SettingsRepository::get_auto_summarize_enabled(pool)
+        .await
+        .map_err(|e| format!("Failed to get auto-summarize setting: {}", e))
+}
+
+/// Saves the auto-summarize setting
+#[tauri::command]
+pub async fn api_save_auto_summarize_enabled<R: Runtime>(
+    _app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+    enabled: bool,
+) -> Result<(), String> {
+    let pool = state.db_manager.pool();
+    crate::database::repositories::setting::SettingsRepository::save_auto_summarize_enabled(pool, enabled)
+        .await
+        .map_err(|e| format!("Failed to save auto-summarize setting: {}", e))
+}
+
+/// Checks transcript capacity against model context window
+#[tauri::command]
+pub async fn api_check_transcript_capacity<R: Runtime>(
+    app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+    meeting_id: String,
+    model_provider: String,
+    model_name: String,
+) -> Result<Option<String>, String> {
+    let pool = state.db_manager.pool();
+    Ok(SummaryService::check_transcript_capacity(&app, pool, &meeting_id, &model_provider, &model_name).await)
+}

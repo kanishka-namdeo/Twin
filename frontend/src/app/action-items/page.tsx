@@ -182,9 +182,9 @@ export default function ActionItemsPage() {
   };
 
   return (
-    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
+    <div className="h-screen bg-[var(--background)] flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="bg-white border-b sticky top-0 z-10">
+      <div className="bg-[var(--card)] border-b sticky top-0 z-10">
         <div className="max-w-4xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -231,7 +231,7 @@ export default function ActionItemsPage() {
 
           {/* Filter panel */}
           {showFilters && (
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg border">
+            <div className="mt-4 p-4 bg-[var(--muted)] rounded-lg border-[var(--border)]">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {/* Meeting filter */}
                 <div>
@@ -393,7 +393,7 @@ export default function ActionItemsPage() {
               <Card
                 key={item.id}
                 className={`transition-colors ${
-                  item.completed ? 'bg-gray-50 border-gray-200' : 'bg-white border-gray-300'
+                  item.completed ? 'bg-[var(--muted)] border-[var(--border)]' : 'bg-[var(--card)] border-[var(--border)]'
                 }`}
               >
                 <CardContent className="p-4">

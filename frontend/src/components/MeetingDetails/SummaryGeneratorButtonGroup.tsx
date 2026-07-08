@@ -29,6 +29,7 @@ interface SummaryGeneratorButtonGroupProps {
   setModelConfig: (config: ModelConfig | ((prev: ModelConfig) => ModelConfig)) => void;
   onSaveModelConfig: (config?: ModelConfig) => Promise<void>;
   onGenerateSummary: (customPrompt: string) => Promise<void>;
+  onRegenerateSummary?: () => Promise<void>;
   onStopGeneration: () => void;
   customPrompt: string;
   summaryStatus: 'idle' | 'processing' | 'summarizing' | 'regenerating' | 'completed' | 'error';
@@ -46,6 +47,7 @@ export function SummaryGeneratorButtonGroup({
   setModelConfig,
   onSaveModelConfig,
   onGenerateSummary,
+  onRegenerateSummary,
   onStopGeneration,
   customPrompt,
   summaryStatus,
@@ -86,7 +88,11 @@ export function SummaryGeneratorButtonGroup({
   const checkOllamaModelsAndGenerate = async () => {
     // Only check for Ollama provider
     if (modelConfig.provider !== 'ollama') {
-      onGenerateSummary(customPrompt);
+      if (hasSummary && onRegenerateSummary) {
+        onRegenerateSummary();
+      } else {
+        onGenerateSummary(customPrompt);
+      }
       return;
     }
 
@@ -105,8 +111,12 @@ export function SummaryGeneratorButtonGroup({
         return;
       }
 
-      // Models are available, proceed with generation
-      onGenerateSummary(customPrompt);
+      // Models are available, proceed with generation or regeneration
+      if (hasSummary && onRegenerateSummary) {
+        onRegenerateSummary();
+      } else {
+        onGenerateSummary(customPrompt);
+      }
     } catch (error) {
       console.error('Error checking Ollama models:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);

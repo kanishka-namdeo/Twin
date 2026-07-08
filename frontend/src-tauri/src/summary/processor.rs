@@ -341,6 +341,7 @@ pub async fn generate_meeting_summary(
     summary_language: Option<&str>,
     detected_transcript_language: Option<&str>,
     cached_english: Option<&str>,
+    streaming_callback: Option<std::sync::Arc<dyn Fn(&str) + Send + Sync>>,
 ) -> Result<(String, String, i64), String> {
     if let Some(token) = cancellation_token {
         if token.is_cancelled() {
@@ -415,6 +416,7 @@ pub async fn generate_meeting_summary(
                     top_k,
                     app_data_dir,
                     cancellation_token,
+                    None, // No streaming for intermediate chunks
                 )
                 .await
                 {
@@ -469,6 +471,7 @@ pub async fn generate_meeting_summary(
                     top_k,
                     app_data_dir,
                     cancellation_token,
+                    None, // No streaming for intermediate combine step
                 )
                 .await?
             } else {
@@ -518,6 +521,7 @@ pub async fn generate_meeting_summary(
             top_k,
             app_data_dir,
             cancellation_token,
+            streaming_callback, // Stream the final report generation
         )
         .await?;
 
@@ -624,6 +628,7 @@ async fn run_markdown_transform(
         top_k,
         app_data_dir,
         cancellation_token,
+        None, // No streaming for translation/normalization
     )
     .await
     .map_err(|e| format!("{failure_label} failed: {e}"))?;

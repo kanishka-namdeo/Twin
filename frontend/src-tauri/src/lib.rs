@@ -622,6 +622,10 @@ pub fn run() {
             summary::commands::api_save_meeting_detected_summary_language,
             summary::commands::api_detect_transcript_summary_language,
             summary::commands::api_cancel_summary,
+            summary::commands::api_get_auto_summarize_enabled,
+            summary::commands::api_save_auto_summarize_enabled,
+            summary::commands::api_check_transcript_capacity,
+            summary::commands::api_regenerate_summary,
             // Template commands
             summary::template_commands::api_list_templates,
             summary::template_commands::api_get_template_details,

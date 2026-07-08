@@ -130,3 +130,30 @@ const jetbrainsMono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-mon
 
 - **Dot Pattern:** `radial-gradient(circle, white 1px, transparent 1px)` at `32px` intervals, `opacity: 0.03` — on dark inverted sections
 - **Radial Glows:** Large blurred circles (`blur-[150px]`) of accent color at `3-6%` opacity — at section corners
+
+## Content Width Tokens
+
+| Token | Value | Usage |
+|:------|:------|:------|
+| `max-w-3xl` | `48rem` (768px) | Standard content width (transcripts, recording controls) |
+| `max-w-4xl` | `56rem` (896px) | Comfortable content width (large viewports) |
+| `max-w-6xl` | `72rem` (1152px) | Page-level content width |
+| `max-w-7xl` | `80rem` (1280px) | Wide page layouts |
+
+### Responsive Width Strategy
+
+Use Tailwind's responsive prefixes to scale content width with viewport:
+
+```tsx
+// Standard pattern: fluid width with breakpoint-specific max-widths
+<div className="w-full max-w-3xl lg:max-w-4xl">
+  {/* Content adapts: 768px on standard, 896px on large+ */}
+</div>
+```
+
+### When to Use Each Token
+
+- **`max-w-3xl`**: Transcript content, recording controls, status overlays
+- **`max-w-4xl`**: Same elements on large viewports (>1024px)
+- **`max-w-6xl`**: Settings pages, full-width content areas
+- **`max-w-7xl`**: Main content wrapper with centered alignment

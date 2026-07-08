@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <style>
+    .primary { fill: #0052FF; }
+    .secondary { fill: #4D7CFF; }
+    .surface { fill: #FFFFFF; }
+    .accent { fill: #10B981; }
+    
+    @media (prefers-color-scheme: dark) {
+      .primary { fill: #4D7CFF; }
+      .secondary { fill: #60A5FA; }
+      .surface { fill: #0F172A; }
+      .accent { fill: #34D399; }
+    }
+  </style>
+  
+  <!-- Meeting circles concept: Connection/collaboration theme -->
+  <g id="logo-mark">
+    <!-- Three overlapping circles representing people/meetings -->
+    <circle cx="35" cy="35" r="18" class="primary" opacity="0.85" />
+    <circle cx="65" cy="35" r="18" class="secondary" opacity="0.85" />
+    <circle cx="50" cy="60" r="18" class="accent" opacity="0.85" />
+    
+    <!-- Intersection highlights -->
+    <circle cx="50" cy="35" r="10" class="surface" opacity="0.25" />
+    <circle cx="43" cy="48" r="8" class="surface" opacity="0.2" />
+    <circle cx="57" cy="48" r="8" class="surface" opacity="0.2" />
+    
+    <!-- Central connection point -->
+    <circle cx="50" cy="45" r="6" class="primary" />
+  </g>
+</svg>

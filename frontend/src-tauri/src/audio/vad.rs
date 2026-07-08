@@ -276,7 +276,26 @@ impl ContinuousVadProcessor {
 
         // Accumulate speech if we're currently in a speech state
         if self.in_speech {
-            self.current_speech.extend_from_slice(chunk);
+            // MEMORY LEAK FIX: Force-flush segment if it exceeds 30 seconds (480k samples at 16kHz)
+            // This prevents unbounded growth during long continuous speech (lectures, presentations)
+            const MAX_SPEECH_SAMPLES: usize = 16000 * 30; // 30 seconds
+            if self.current_speech.len() > MAX_SPEECH_SAMPLES {
+                warn!("VAD: Forcibly flushing speech segment after {} samples ({:.1}s) to prevent memory growth",
+                      self.current_speech.len(), self.current_speech.len() as f64 / 16000.0);
+                let start_ms = (self.speech_start_sample as f64 / 16000.0) * 1000.0;
+                let end_ms = (self.processed_samples as f64 / 16000.0) * 1000.0;
+                let segment = SpeechSegment {
+                    samples: std::mem::take(&mut self.current_speech),
+                    start_timestamp_ms: start_ms,
+                    end_timestamp_ms: end_ms,
+                    confidence: 0.7, // Lower confidence for forced flush
+                };
+                self.speech_segments.push_back(segment);
+                self.in_speech = false;
+                self.last_logged_state = false;
+            } else {
+                self.current_speech.extend_from_slice(chunk);
+            }
         }
 
         self.processed_samples += chunk.len();

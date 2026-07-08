@@ -193,7 +193,7 @@ export default function Home() {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      className="flex flex-col h-screen bg-gray-50 w-full overflow-hidden"
+      className="flex flex-col h-screen bg-[var(--background)] w-full overflow-hidden"
     >
       {/* All Modals supported*/}
       <SettingsModals
@@ -234,13 +234,10 @@ export default function Home() {
           status !== RecordingStatus.SAVING && (
             <div className="fixed bottom-12 left-0 right-0 z-10 px-4">
               <div
-                className="flex justify-center transition-[margin] duration-300"
-                style={{
-                  marginLeft: sidebarCollapsed ? '4rem' : '16rem'
-                }}
+                className={`flex justify-center transition-all duration-300 ${sidebarCollapsed ? 'ml-16' : 'ml-64'}`}
               >
-                <div className="w-full max-w-[750px] flex justify-center">
-                  <div className="bg-white rounded-full shadow-lg flex items-center">
+                <div className="w-full max-w-full md:max-w-3xl flex justify-center">
+                  <div className="bg-[var(--card)] rounded-full shadow-lg flex items-center">
                     <RecordingControls
                       isRecording={recordingState.isRecording}
                       onRecordingStop={(callApi = true) => handleRecordingStop(callApi)}

@@ -46,4 +46,19 @@ impl TranscriptChunksRepository {
 
         Ok(())
     }
+
+    /// Retrieves the stored transcript text for a meeting (used for regeneration).
+    pub async fn get_transcript_text(
+        pool: &SqlitePool,
+        meeting_id: &str,
+    ) -> Result<Option<String>, sqlx::Error> {
+        let row: Option<(String,)> = sqlx::query_as(
+            "SELECT transcript_text FROM transcript_chunks WHERE meeting_id = ?"
+        )
+        .bind(meeting_id)
+        .fetch_optional(pool)
+        .await?;
+
+        Ok(row.map(|(text,)| text))
+    }
 }

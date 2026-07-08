@@ -340,4 +340,37 @@ impl SettingsRepository {
 
         Ok(())
     }
+
+    /// Gets whether auto-summarize is enabled
+    pub async fn get_auto_summarize_enabled(
+        pool: &SqlitePool,
+    ) -> std::result::Result<bool, sqlx::Error> {
+        let enabled: Option<bool> = sqlx::query_scalar(
+            "SELECT autoSummarizeEnabled FROM settings WHERE id = '1' LIMIT 1",
+        )
+        .fetch_optional(pool)
+        .await?;
+
+        Ok(enabled.unwrap_or(false))
+    }
+
+    /// Saves whether auto-summarize is enabled
+    pub async fn save_auto_summarize_enabled(
+        pool: &SqlitePool,
+        enabled: bool,
+    ) -> std::result::Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            INSERT INTO settings (id, provider, model, whisperModel, autoSummarizeEnabled)
+            VALUES ('1', 'openai', 'gpt-4o-2024-11-20', 'large-v3', $1)
+            ON CONFLICT(id) DO UPDATE SET
+                autoSummarizeEnabled = excluded.autoSummarizeEnabled
+            "#,
+        )
+        .bind(enabled)
+        .execute(pool)
+        .await?;
+
+        Ok(())
+    }
 }

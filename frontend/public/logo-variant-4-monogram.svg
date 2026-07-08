@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <style>
+    .primary { fill: #0052FF; }
+    .secondary { fill: #4D7CFF; }
+    .surface { fill: #FFFFFF; }
+    .accent { fill: #10B981; }
+    
+    @media (prefers-color-scheme: dark) {
+      .primary { fill: #4D7CFF; }
+      .secondary { fill: #60A5FA; }
+      .surface { fill: #0F172A; }
+      .accent { fill: #34D399; }
+    }
+  </style>
+  
+  <!-- Monogram "T" concept: Clean letter mark -->
+  <g id="logo-mark">
+    <!-- Rounded square background -->
+    <rect x="10" y="10" width="80" height="80" rx="16" class="primary" />
+    
+    <!-- Inner gradient layer -->
+    <rect x="18" y="18" width="64" height="64" rx="12" class="secondary" opacity="0.3" />
+    
+    <!-- Letter "T" with modern styling -->
+    <path d="M30,35 L70,35" class="surface" stroke-width="8" fill="none" stroke-linecap="round" />
+    <path d="M50,35 L50,70" class="surface" stroke-width="8" fill="none" stroke-linecap="round" />
+    
+    <!-- Accent mark -->
+    <circle cx="50" cy="30" r="4" class="accent" opacity="0.9" />
+  </g>
+</svg>
