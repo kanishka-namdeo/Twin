@@ -13,7 +13,6 @@ pub mod permissions;
 // NEW: Device detection and diagnostics for adaptive buffering
 pub mod device_detection;
 pub mod diagnostics;
-pub mod ffmpeg_mixer;  // NEW: FFmpeg-style adaptive audio mixer
 
 // New simplified audio system
 pub mod recording_state;
@@ -36,6 +35,9 @@ pub mod system_audio_commands;
 pub mod device_monitor;  // NEW: Device disconnect/reconnect monitoring
 // Transcription module (provider abstraction, engine management, worker pool)
 pub mod transcription;
+
+// Speaker diarization module (energy-based speaker clustering)
+pub mod diarization;
 
 // Shared utilities for import and retranscription
 pub(crate) mod common;
@@ -106,8 +108,9 @@ pub use diagnostics::{
     log_mixer_status, log_performance_summary
 };
 
-// Export FFmpeg mixer
-pub use ffmpeg_mixer::{FFmpegAudioMixer, BufferStats, RNNOISE_APPLY_ENABLED};
+/// Configuration flag for RNNoise noise suppression
+/// Disabled by default - Whisper handles noise well internally
+pub const RNNOISE_APPLY_ENABLED: bool = false;
 
 pub use vad::{extract_speech_16k};
 

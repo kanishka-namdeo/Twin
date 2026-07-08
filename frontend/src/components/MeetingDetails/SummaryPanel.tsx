@@ -9,7 +9,7 @@ import { SummaryGeneratorButtonGroup } from './SummaryGeneratorButtonGroup';
 import { SummaryUpdaterButtonGroup } from './SummaryUpdaterButtonGroup';
 import { useEffect, useRef, useState, RefObject } from 'react';
 import { toast } from 'sonner';
-import { Languages, ChevronDown } from 'lucide-react';
+import { Languages, ChevronDown, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { LanguagePickerPopover } from '@/components/LanguagePickerPopover';
@@ -20,6 +20,46 @@ import {
   saveMeetingSummaryLanguage,
   SummaryLanguageStorage,
 } from '@/lib/summary-language-preferences';
+import { Slider } from '@/components/ui/slider';
+
+export interface GenerationParams {
+  temperature: number;
+  topP: number;
+  topK: number;
+  maxTokens: number;
+}
+
+const DEFAULT_GENERATION_PARAMS: GenerationParams = {
+  temperature: 0.7,
+  topP: 0.9,
+  topK: 40,
+  maxTokens: 2048,
+};
+
+const STORAGE_KEY = 'meetily-generation-params';
+
+function loadGenerationParams(): GenerationParams {
+  if (typeof window === 'undefined') return DEFAULT_GENERATION_PARAMS;
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      return { ...DEFAULT_GENERATION_PARAMS, ...parsed };
+    }
+  } catch (e) {
+    console.warn('Failed to load generation params from localStorage:', e);
+  }
+  return DEFAULT_GENERATION_PARAMS;
+}
+
+function saveGenerationParams(params: GenerationParams): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(params));
+  } catch (e) {
+    console.warn('Failed to save generation params to localStorage:', e);
+  }
+}
 
 interface SummaryPanelProps {
   meeting: {
@@ -43,7 +83,7 @@ interface SummaryPanelProps {
   modelConfig: ModelConfig;
   setModelConfig: (config: ModelConfig | ((prev: ModelConfig) => ModelConfig)) => void;
   onSaveModelConfig: (config?: ModelConfig) => Promise<void>;
-  onGenerateSummary: (customPrompt: string) => Promise<void>;
+  onGenerateSummary: (customPrompt: string, generationParams?: GenerationParams) => Promise<void>;
   onStopGeneration: () => void;
   customPrompt: string;
   summaryResponse: SummaryResponse | null;
@@ -51,7 +91,7 @@ interface SummaryPanelProps {
   onSummaryChange: (summary: Summary) => void;
   onDirtyChange: (isDirty: boolean) => void;
   summaryError: string | null;
-  onRegenerateSummary: () => Promise<void>;
+  onRegenerateSummary: (generationParams?: GenerationParams) => Promise<void>;
   getSummaryStatusMessage: (status: 'idle' | 'processing' | 'summarizing' | 'regenerating' | 'completed' | 'error') => string;
   availableTemplates: Array<{ id: string, name: string, description: string }>;
   selectedTemplate: string;
@@ -112,6 +152,38 @@ export function SummaryPanel({
   } | null>(null);
   activeMeetingIdRef.current = meeting.id;
   const { addRecent } = useRecentLanguages();
+
+  const [generationParams, setGenerationParams] = useState<GenerationParams>(loadGenerationParams);
+  const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
+
+  const isLocalLLM = modelConfig.provider === 'local-llm';
+
+  const handleGenerationParamChange = (key: keyof GenerationParams, value: number) => {
+    const updated = { ...generationParams, [key]: value };
+    setGenerationParams(updated);
+    saveGenerationParams(updated);
+  };
+
+  const handleResetToDefaults = () => {
+    setGenerationParams(DEFAULT_GENERATION_PARAMS);
+    saveGenerationParams(DEFAULT_GENERATION_PARAMS);
+  };
+
+  // Wrap onGenerateSummary to inject generation params when LocalLLM is selected
+  const handleGenerateSummaryWithParams = (customPrompt: string) => {
+    if (isLocalLLM) {
+      return onGenerateSummary(customPrompt, generationParams);
+    }
+    return onGenerateSummary(customPrompt);
+  };
+
+  // Wrap onRegenerateSummary to inject generation params when LocalLLM is selected
+  const handleRegenerateSummaryWithParams = () => {
+    if (isLocalLLM) {
+      return onRegenerateSummary(generationParams);
+    }
+    return onRegenerateSummary();
+  };
 
   const effectiveLangLabel = summaryLang ? labelForCode(summaryLang) : 'Auto';
   const isLocalFallbackLanguage = summaryLangStorage === 'local_fallback';
@@ -249,8 +321,114 @@ export function SummaryPanel({
     </Popover>
   );
 
+  const advancedOptionsSlot = isLocalLLM && (
+    <Popover open={showAdvancedOptions} onOpenChange={setShowAdvancedOptions}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          title="Advanced generation options"
+          aria-label="Advanced options"
+        >
+          <Settings2 size={18} />
+          <span className="hidden lg:inline">Options</span>
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        className="w-80 p-4"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold">Generation Parameters</h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleResetToDefaults}
+              className="text-xs h-7"
+            >
+              Reset
+            </Button>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium text-gray-700 flex justify-between mb-1">
+                <span>Temperature</span>
+                <span className="text-gray-500">{generationParams.temperature.toFixed(1)}</span>
+              </label>
+              <Slider
+                value={[generationParams.temperature]}
+                onValueChange={(val) => handleGenerationParamChange('temperature', val[0])}
+                min={0.1}
+                max={1.5}
+                step={0.1}
+                className="w-full"
+              />
+              <p className="text-xs text-gray-500 mt-1">Controls randomness (0.1 = focused, 1.5 = creative)</p>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-gray-700 flex justify-between mb-1">
+                <span>Top P</span>
+                <span className="text-gray-500">{generationParams.topP.toFixed(2)}</span>
+              </label>
+              <Slider
+                value={[generationParams.topP]}
+                onValueChange={(val) => handleGenerationParamChange('topP', val[0])}
+                min={0.1}
+                max={1.0}
+                step={0.05}
+                className="w-full"
+              />
+              <p className="text-xs text-gray-500 mt-1">Nucleus sampling threshold</p>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-gray-700 flex justify-between mb-1">
+                <span>Top K</span>
+                <span className="text-gray-500">{generationParams.topK}</span>
+              </label>
+              <Slider
+                value={[generationParams.topK]}
+                onValueChange={(val) => handleGenerationParamChange('topK', val[0])}
+                min={1}
+                max={100}
+                step={1}
+                className="w-full"
+              />
+              <p className="text-xs text-gray-500 mt-1">Limits token selection pool</p>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium text-gray-700 flex justify-between mb-1">
+                <span>Max Tokens</span>
+                <span className="text-gray-500">{generationParams.maxTokens}</span>
+              </label>
+              <input
+                type="number"
+                value={generationParams.maxTokens}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value);
+                  if (!isNaN(val) && val >= 256 && val <= 8192) {
+                    handleGenerationParamChange('maxTokens', val);
+                  }
+                }}
+                min={256}
+                max={8192}
+                step={256}
+                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">Maximum output length (256-8192)</p>
+            </div>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+
   return (
-    <div className="flex-1 min-w-0 flex flex-col bg-white overflow-hidden">
+    <div className="flex-1 min-w-0 flex flex-col bg-white">
       {/* Title area */}
       <div className="p-4 border-b border-gray-200">
         {/* <EditableTitle
@@ -270,7 +448,7 @@ export function SummaryPanel({
                 modelConfig={modelConfig}
                 setModelConfig={setModelConfig}
                 onSaveModelConfig={onSaveModelConfig}
-                onGenerateSummary={onGenerateSummary}
+                onGenerateSummary={handleGenerateSummaryWithParams}
                 onStopGeneration={onStopGeneration}
                 customPrompt={customPrompt}
                 summaryStatus={summaryStatus}
@@ -282,6 +460,7 @@ export function SummaryPanel({
                 isModelConfigLoading={isModelConfigLoading}
                 onOpenModelSettings={onOpenModelSettings}
                 languageSlot={languageSlot}
+                advancedOptionsSlot={advancedOptionsSlot}
               />
             </div>
 
@@ -307,7 +486,7 @@ export function SummaryPanel({
               modelConfig={modelConfig}
               setModelConfig={setModelConfig}
               onSaveModelConfig={onSaveModelConfig}
-              onGenerateSummary={onGenerateSummary}
+              onGenerateSummary={handleGenerateSummaryWithParams}
               onStopGeneration={onStopGeneration}
               customPrompt={customPrompt}
               summaryStatus={summaryStatus}
@@ -317,6 +496,7 @@ export function SummaryPanel({
               hasTranscripts={transcripts.length > 0}
               isModelConfigLoading={isModelConfigLoading}
               onOpenModelSettings={onOpenModelSettings}
+              advancedOptionsSlot={advancedOptionsSlot}
             />
           </div>
           {/* Loading spinner */}
@@ -335,7 +515,7 @@ export function SummaryPanel({
               modelConfig={modelConfig}
               setModelConfig={setModelConfig}
               onSaveModelConfig={onSaveModelConfig}
-              onGenerateSummary={onGenerateSummary}
+              onGenerateSummary={handleGenerateSummaryWithParams}
               onStopGeneration={onStopGeneration}
               customPrompt={customPrompt}
               summaryStatus={summaryStatus}
@@ -347,11 +527,12 @@ export function SummaryPanel({
               isModelConfigLoading={isModelConfigLoading}
               onOpenModelSettings={onOpenModelSettings}
               languageSlot={transcripts.length > 0 ? languageSlot : undefined}
+              advancedOptionsSlot={advancedOptionsSlot}
             />
           </div>
           {/* Empty state message */}
           <EmptyStateSummary
-            onGenerate={() => onGenerateSummary(customPrompt)}
+            onGenerate={() => handleGenerateSummaryWithParams(customPrompt)}
             hasModel={modelConfig.provider !== null && modelConfig.model !== null}
             isGenerating={isSummaryLoading}
           />
@@ -359,9 +540,9 @@ export function SummaryPanel({
       ) : transcripts?.length > 0 && (
         <div className="flex-1 overflow-y-auto min-h-0">
           {summaryResponse && (
-            <div className="fixed bottom-0 left-0 right-0 bg-white shadow-lg p-4 max-h-1/3 overflow-y-auto">
+            <div className="sticky bottom-0 left-0 right-0 bg-white shadow-lg p-4 max-h-[33vh] overflow-y-auto border-t border-gray-200">
               <h3 className="text-lg font-semibold mb-2">Meeting Summary</h3>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="bg-white p-4 rounded-lg shadow-sm">
                   <h4 className="font-medium mb-1">Key Points</h4>
                   <ul className="list-disc pl-4">
@@ -370,7 +551,7 @@ export function SummaryPanel({
                     ))}
                   </ul>
                 </div>
-                <div className="bg-white p-4 rounded-lg shadow-sm mt-4">
+                <div className="bg-white p-4 rounded-lg shadow-sm">
                   <h4 className="font-medium mb-1">Action Items</h4>
                   <ul className="list-disc pl-4">
                     {summaryResponse.summary.action_items.blocks.map((block, i) => (
@@ -378,7 +559,7 @@ export function SummaryPanel({
                     ))}
                   </ul>
                 </div>
-                <div className="bg-white p-4 rounded-lg shadow-sm mt-4">
+                <div className="bg-white p-4 rounded-lg shadow-sm">
                   <h4 className="font-medium mb-1">Decisions</h4>
                   <ul className="list-disc pl-4">
                     {summaryResponse.summary.decisions.blocks.map((block, i) => (
@@ -386,7 +567,7 @@ export function SummaryPanel({
                     ))}
                   </ul>
                 </div>
-                <div className="bg-white p-4 rounded-lg shadow-sm mt-4">
+                <div className="bg-white p-4 rounded-lg shadow-sm">
                   <h4 className="font-medium mb-1">Main Topics</h4>
                   <ul className="list-disc pl-4">
                     {summaryResponse.summary.main_topics.blocks.map((block, i) => (
@@ -412,7 +593,7 @@ export function SummaryPanel({
               onDirtyChange={onDirtyChange}
               status={summaryStatus}
               error={summaryError}
-              onRegenerateSummary={onRegenerateSummary}
+              onRegenerateSummary={handleRegenerateSummaryWithParams}
               meeting={{
                 id: meeting.id,
                 title: meetingTitle,

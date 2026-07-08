@@ -39,13 +39,12 @@ pub mod config;
 pub mod console_utils;
 pub mod database;
 pub mod lifecycle;
+pub mod llm_engine;
 
 pub mod ollama;
 pub mod onboarding;
 pub mod openai;
 pub mod anthropic;
-pub mod groq;
-pub mod openrouter;
 pub mod parakeet_engine;
 pub mod signal_handler;
 pub mod state;
@@ -78,6 +77,22 @@ struct TranscriptionStatus {
     last_activity_ms: u64,
 }
 
+#[derive(Debug, Serialize, Clone)]
+struct AppState {
+    is_recording: bool,
+    is_paused: bool,
+    is_audio_level_monitoring: bool,
+}
+
+#[tauri::command]
+async fn get_app_state() -> AppState {
+    AppState {
+        is_recording: audio::recording_commands::is_recording().await,
+        is_paused: audio::recording_commands::is_recording_paused().await,
+        is_audio_level_monitoring: audio::simple_level_monitor::is_monitoring(),
+    }
+}
+
 #[tauri::command]
 async fn start_recording<R: Runtime>(
     app: AppHandle<R>,
@@ -93,7 +108,7 @@ async fn start_recording<R: Runtime>(
         meeting_name
     );
 
-    if is_recording().await {
+    if audio::recording_commands::is_recording().await {
         return Err("Recording already in progress".to_string());
     }
 
@@ -193,11 +208,6 @@ async fn stop_recording<R: Runtime>(app: AppHandle<R>, args: RecordingArgs) -> R
 }
 
 #[tauri::command]
-async fn is_recording() -> bool {
-    audio::recording_commands::is_recording().await
-}
-
-#[tauri::command]
 fn get_transcription_status() -> TranscriptionStatus {
     TranscriptionStatus {
         chunks_in_queue: 0,
@@ -259,11 +269,6 @@ async fn stop_audio_level_monitoring() -> Result<(), String> {
         .map_err(|e| format!("Failed to stop audio level monitoring: {}", e))
 }
 
-#[tauri::command]
-async fn is_audio_level_monitoring() -> bool {
-    audio::simple_level_monitor::is_monitoring()
-}
-
 // Whisper commands are now handled by whisper_engine::commands module
 
 #[tauri::command]
@@ -277,78 +282,6 @@ async fn get_audio_devices() -> Result<Vec<AudioDevice>, String> {
 async fn trigger_microphone_permission() -> Result<bool, String> {
     trigger_audio_permission()
         .map_err(|e| format!("Failed to trigger microphone permission: {}", e))
-}
-
-#[tauri::command]
-async fn start_recording_with_devices<R: Runtime>(
-    app: AppHandle<R>,
-    mic_device_name: Option<String>,
-    system_device_name: Option<String>,
-) -> Result<(), String> {
-    start_recording_with_devices_and_meeting(app, mic_device_name, system_device_name, None).await
-}
-
-#[tauri::command]
-async fn start_recording_with_devices_and_meeting<R: Runtime>(
-    app: AppHandle<R>,
-    mic_device_name: Option<String>,
-    system_device_name: Option<String>,
-    meeting_name: Option<String>,
-) -> Result<(), String> {
-    log_info!("🚀 CALLED start_recording_with_devices_and_meeting - Mic: {:?}, System: {:?}, Meeting: {:?}",
-             mic_device_name, system_device_name, meeting_name);
-
-    // Clone meeting_name for notification use later
-    let meeting_name_for_notification = meeting_name.clone();
-
-    // Call the recording module functions that support meeting names
-    let recording_result = match (mic_device_name.clone(), system_device_name.clone()) {
-        (None, None) => {
-            log_info!(
-                "No devices specified, starting with defaults and meeting: {:?}",
-                meeting_name
-            );
-            audio::recording_commands::start_recording_with_meeting_name(app.clone(), meeting_name)
-                .await
-        }
-        _ => {
-            log_info!(
-                "Starting with specified devices: mic={:?}, system={:?}, meeting={:?}",
-                mic_device_name,
-                system_device_name,
-                meeting_name
-            );
-            audio::recording_commands::start_recording_with_devices_and_meeting(
-                app.clone(),
-                mic_device_name,
-                system_device_name,
-                meeting_name,
-            )
-            .await
-        }
-    };
-
-    match recording_result {
-        Ok(_) => {
-            log_info!("Recording started successfully via tauri command");
-
-            // Show recording started notification
-            if let Err(e) = app.notification()
-                .builder()
-                .title("Twin")
-                .body("Recording started")
-                .show()
-            {
-                log_error!("Failed to show recording started notification: {}", e);
-            }
-
-            Ok(())
-        }
-        Err(e) => {
-            log_error!("Failed to start recording via tauri command: {}", e);
-            Err(e)
-        }
-    }
 }
 
 #[tauri::command]
@@ -472,6 +405,30 @@ pub fn run() {
                         }),
                     )
                     .await;
+
+                // Register LLM engine as a secondary resource for GPU cleanup
+                lifecycle_manager
+                    .register(
+                        "llm_engine",
+                        lifecycle::resource::CleanupPriority::Secondary,
+                        Box::new(|| {
+                            Box::pin(async move {
+                                log::info!("Lifecycle: unloading LLM engine GPU context...");
+                                let engine = {
+                                    let guard = llm_engine::commands::LLM_ENGINE.lock()
+                                        .map_err(|e| format!("LLM engine lock poisoned: {}", e))?;
+                                    guard.clone()
+                                };
+                                if let Some(engine) = engine {
+                                    let mut engine_guard = engine.lock().await;
+                                    engine_guard.unload_model().await;
+                                }
+                                log::info!("Lifecycle: LLM engine GPU context released");
+                                Ok(())
+                            })
+                        }),
+                    )
+                    .await;
             });
 
             // Initialize system tray
@@ -496,6 +453,16 @@ pub fn run() {
             tauri::async_runtime::spawn(async {
                 if let Err(e) = parakeet_engine::commands::parakeet_init().await {
                     log::error!("Failed to initialize Parakeet engine on startup: {}", e);
+                }
+            });
+
+            // Set LLM models directory
+            llm_engine::commands::set_models_directory(&app.handle());
+
+            // Initialize LLM engine on startup
+            tauri::async_runtime::spawn(async {
+                if let Err(e) = llm_engine::commands::llm_init().await {
+                    log::error!("Failed to initialize LLM engine on startup: {}", e);
                 }
             });
 
@@ -543,8 +510,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             start_recording,
             stop_recording,
-            is_recording,
             get_transcription_status,
+            get_app_state,
             read_audio_file,
             save_transcript,
             whisper_engine::commands::whisper_init,
@@ -559,6 +526,7 @@ pub fn run() {
             whisper_engine::commands::whisper_download_model,
             whisper_engine::commands::whisper_cancel_download,
             whisper_engine::commands::whisper_delete_corrupted_model,
+            whisper_engine::commands::whisper_get_acceleration_info,
             // Parakeet engine commands
             parakeet_engine::commands::parakeet_init,
             parakeet_engine::commands::parakeet_get_available_models,
@@ -574,13 +542,23 @@ pub fn run() {
             parakeet_engine::commands::parakeet_cancel_download,
             parakeet_engine::commands::parakeet_delete_corrupted_model,
             parakeet_engine::commands::open_parakeet_models_folder,
+            // LLM engine commands
+            llm_engine::commands::llm_init,
+            llm_engine::commands::llm_get_available_models,
+            llm_engine::commands::llm_download_model,
+            llm_engine::commands::llm_delete_model,
+            llm_engine::commands::llm_load_model,
+            llm_engine::commands::llm_unload_model,
+            llm_engine::commands::llm_is_model_loaded,
+            llm_engine::commands::llm_get_current_model,
+            llm_engine::commands::llm_get_models_directory,
+            llm_engine::commands::llm_get_gpu_info,
+            llm_engine::commands::open_llm_models_folder,
+            llm_engine::commands::llm_recommend_model,
             get_audio_devices,
             trigger_microphone_permission,
-            start_recording_with_devices,
-            start_recording_with_devices_and_meeting,
             start_audio_level_monitoring,
             stop_audio_level_monitoring,
-            is_audio_level_monitoring,
             // Recording pause/resume commands
             audio::recording_commands::pause_recording,
             audio::recording_commands::resume_recording,
@@ -607,7 +585,6 @@ pub fn run() {
             ollama::get_ollama_model_context,
             openai::openai::get_openai_models,
             anthropic::anthropic::get_anthropic_models,
-            groq::groq::get_groq_models,
             api::api_get_meetings,
             api::api_search_transcripts,
             api::api_get_profile,
@@ -649,7 +626,6 @@ pub fn run() {
             summary::template_commands::api_list_templates,
             summary::template_commands::api_get_template_details,
             summary::template_commands::api_validate_template,
-            openrouter::get_openrouter_models,
             audio::recording_preferences::get_recording_preferences,
             audio::recording_preferences::set_recording_preferences,
             audio::recording_preferences::get_default_recordings_folder_path,
@@ -680,6 +656,9 @@ pub fn run() {
             database::commands::get_database_directory,
             database::commands::open_database_folder,
             whisper_engine::commands::open_models_folder,
+            // Speaker diarization commands
+            database::commands_speaker::get_speakers,
+            database::commands_speaker::rename_speaker,
             // Onboarding commands
             onboarding::get_onboarding_status,
             onboarding::save_onboarding_status_cmd,
@@ -699,6 +678,23 @@ pub fn run() {
             audio::import::start_import_audio_command,
             audio::import::cancel_import_command,
             audio::import::is_import_in_progress_command,
+            // Action items commands
+            api::api_get_all_action_items,
+            api::api_update_action_item,
+            // FTS5 search commands
+            api::api_search_meetings_fts,
+            // Export commands
+            api::api_export_meeting_transcript,
+            api::api_export_meeting_bundle,
+            // Meeting context commands
+            api::api_save_meeting_context,
+            api::api_get_meeting_context,
+            // Meeting notes commands
+            api::api_get_meeting_notes,
+            api::api_save_meeting_notes,
+            api::api_get_meetings_with_notes,
+            // Meeting audio commands
+            api::api_get_meeting_audio_path,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -761,6 +757,21 @@ pub fn run() {
                                 };
                                 if let Some(engine) = engine {
                                     engine.unload_model().await;
+                                }
+                            }
+                            log::info!("Cleaning up LLM engine GPU context...");
+                            {
+                                let engine = {
+                                    let guard = llm_engine::commands::LLM_ENGINE.lock();
+                                    if let Ok(guard) = guard {
+                                        guard.clone()
+                                    } else {
+                                        None
+                                    }
+                                };
+                                if let Some(engine) = engine {
+                                    let mut engine_guard = engine.lock().await;
+                                    engine_guard.unload_model().await;
                                 }
                             }
                         }

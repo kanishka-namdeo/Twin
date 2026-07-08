@@ -9,6 +9,7 @@ pub struct MeetingModel {
     pub created_at: DateTimeUtc,
     pub updated_at: DateTimeUtc,
     pub folder_path: Option<String>,
+    pub meeting_context: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
@@ -35,6 +36,19 @@ pub struct Transcript {
     pub audio_start_time: Option<f64>,
     pub audio_end_time: Option<f64>,
     pub duration: Option<f64>,
+    // Speaker diarization: which speaker said this (references speakers table)
+    pub speaker_id: Option<i32>,
+}
+
+/// Speaker model for diarization
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct Speaker {
+    pub id: i32,
+    pub meeting_id: String,
+    pub speaker_index: i32,
+    pub label: String,
+    pub created_at: DateTimeUtc,
+    pub updated_at: DateTimeUtc,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
@@ -74,9 +88,6 @@ pub struct Setting {
     #[sqlx(rename = "whisperModel")]
     #[serde(rename = "whisperModel")]
     pub whisper_model: String,
-    #[sqlx(rename = "groqApiKey")]
-    #[serde(rename = "groqApiKey")]
-    pub groq_api_key: Option<String>,
     #[sqlx(rename = "openaiApiKey")]
     #[serde(rename = "openaiApiKey")]
     pub openai_api_key: Option<String>,
@@ -86,9 +97,6 @@ pub struct Setting {
     #[sqlx(rename = "ollamaApiKey")]
     #[serde(rename = "ollamaApiKey")]
     pub ollama_api_key: Option<String>,
-    #[sqlx(rename = "openRouterApiKey")]
-    #[serde(rename = "openRouterApiKey")]
-    pub open_router_api_key: Option<String>,
     #[sqlx(rename = "ollamaEndpoint")]
     #[serde(rename = "ollamaEndpoint")]
     pub ollama_endpoint: Option<String>,
@@ -121,10 +129,24 @@ pub struct TranscriptSetting {
     #[sqlx(rename = "elevenLabsApiKey")]
     #[serde(rename = "elevenLabsApiKey")]
     pub eleven_labs_api_key: Option<String>,
-    #[sqlx(rename = "groqApiKey")]
-    #[serde(rename = "groqApiKey")]
-    pub groq_api_key: Option<String>,
     #[sqlx(rename = "openaiApiKey")]
     #[serde(rename = "openaiApiKey")]
     pub openai_api_key: Option<String>,
+}
+
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+pub struct ActionItem {
+    pub id: String,
+    pub meeting_id: String,
+    pub text: String,
+    pub completed: bool,
+    pub created_at: DateTimeUtc,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FtsSearchResult {
+    pub meeting_id: String,
+    pub meeting_title: String,
+    pub snippet: String,
+    pub rank: f64,
 }

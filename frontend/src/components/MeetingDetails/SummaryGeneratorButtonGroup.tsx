@@ -24,6 +24,7 @@ import { isOllamaNotInstalledError } from '@/lib/utils';
 
 interface SummaryGeneratorButtonGroupProps {
   languageSlot?: ReactNode;
+  advancedOptionsSlot?: ReactNode;
   modelConfig: ModelConfig;
   setModelConfig: (config: ModelConfig | ((prev: ModelConfig) => ModelConfig)) => void;
   onSaveModelConfig: (config?: ModelConfig) => Promise<void>;
@@ -55,7 +56,8 @@ export function SummaryGeneratorButtonGroup({
   hasSummary = false,
   isModelConfigLoading = false,
   onOpenModelSettings,
-  languageSlot
+  languageSlot,
+  advancedOptionsSlot
 }: SummaryGeneratorButtonGroupProps) {
   const [isCheckingModels, setIsCheckingModels] = useState(false);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
@@ -185,6 +187,8 @@ export function SummaryGeneratorButtonGroup({
       )}
 
       {languageSlot}
+
+      {advancedOptionsSlot}
 
       {/* Settings button */}
       <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>

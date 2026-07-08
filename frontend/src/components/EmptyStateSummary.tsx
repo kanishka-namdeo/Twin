@@ -22,7 +22,7 @@ export function EmptyStateSummary({ onGenerate, hasModel, isGenerating = false }
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      className="flex flex-col items-center justify-center h-full p-8 text-center"
+      className="flex flex-col items-center justify-center min-h-[300px] p-8 text-center"
     >
       <FileQuestion className="w-16 h-16 text-gray-300 mb-4" />
       <h3 className="text-lg font-semibold text-gray-900 mb-2">

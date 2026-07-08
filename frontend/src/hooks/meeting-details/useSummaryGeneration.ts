@@ -11,6 +11,13 @@ import {
   readCachedDetectedSummaryLanguage,
 } from '@/lib/summary-language-preferences';
 
+export interface GenerationParams {
+  temperature?: number;
+  topP?: number;
+  topK?: number;
+  maxTokens?: number;
+}
+
 async function resolveSummaryLanguage(
   meetingId: string,
   transcriptTexts: string[]
@@ -100,11 +107,13 @@ export function useSummaryGeneration({
     transcriptTexts,
     customPrompt = '',
     isRegeneration = false,
+    generationParams,
   }: {
     transcriptText: string;
     transcriptTexts?: string[];
     customPrompt?: string;
     isRegeneration?: boolean;
+    generationParams?: GenerationParams;
   }) => {
     setSummaryStatus(isRegeneration ? 'regenerating' : 'processing');
     setSummaryError(null);
@@ -142,6 +151,10 @@ export function useSummaryGeneration({
         customPrompt: customPrompt,
         templateId: selectedTemplate,
         summaryLanguage,
+        maxTokens: generationParams?.maxTokens ?? null,
+        temperature: generationParams?.temperature ?? null,
+        topP: generationParams?.topP ?? null,
+        topK: generationParams?.topK ?? null,
       }) as any;
 
       const process_id = result.process_id;
@@ -399,7 +412,7 @@ export function useSummaryGeneration({
   }, []);
 
   // Public API: Generate summary from transcripts
-  const handleGenerateSummary = useCallback(async (customPrompt: string = '') => {
+  const handleGenerateSummary = useCallback(async (customPrompt: string = '', generationParams?: GenerationParams) => {
     // Check if model config is still loading
     if (isModelConfigLoading) {
       console.log('⏳ Model configuration is still loading, please wait...');
@@ -423,7 +436,8 @@ export function useSummaryGeneration({
     console.log('🚀 Starting summary generation with config:', {
       provider: modelConfig.provider,
       model: modelConfig.model,
-      template: selectedTemplate
+      template: selectedTemplate,
+      generationParams
     });
 
     // Check if Ollama provider has models available
@@ -472,11 +486,12 @@ export function useSummaryGeneration({
     await processSummary({
       ...summaryPayload,
       customPrompt,
+      generationParams,
     });
   }, [meeting.id, fetchAllTranscripts, buildSummaryTranscriptPayload, processSummary, modelConfig, isModelConfigLoading, selectedTemplate]);
 
   // Public API: Regenerate summary from the current saved transcript
-  const handleRegenerateSummary = useCallback(async () => {
+  const handleRegenerateSummary = useCallback(async (generationParams?: GenerationParams) => {
     const allTranscripts = await fetchAllTranscripts(meeting.id);
 
     if (!allTranscripts.length) {
@@ -487,7 +502,8 @@ export function useSummaryGeneration({
 
     await processSummary({
       ...buildSummaryTranscriptPayload(allTranscripts),
-      isRegeneration: true
+      isRegeneration: true,
+      generationParams,
     });
   }, [meeting.id, fetchAllTranscripts, buildSummaryTranscriptPayload, processSummary]);
 

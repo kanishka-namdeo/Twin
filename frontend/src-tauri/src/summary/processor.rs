@@ -335,6 +335,7 @@ pub async fn generate_meeting_summary(
     max_tokens: Option<u32>,
     temperature: Option<f32>,
     top_p: Option<f32>,
+    top_k: Option<i32>,
     app_data_dir: Option<&PathBuf>,
     cancellation_token: Option<&CancellationToken>,
     summary_language: Option<&str>,
@@ -411,6 +412,7 @@ pub async fn generate_meeting_summary(
                     max_tokens,
                     temperature,
                     top_p,
+                    top_k,
                     app_data_dir,
                     cancellation_token,
                 )
@@ -464,6 +466,7 @@ pub async fn generate_meeting_summary(
                     max_tokens,
                     temperature,
                     top_p,
+                    top_k,
                     app_data_dir,
                     cancellation_token,
                 )
@@ -512,6 +515,7 @@ pub async fn generate_meeting_summary(
             max_tokens,
             temperature,
             top_p,
+            top_k,
             app_data_dir,
             cancellation_token,
         )
@@ -537,6 +541,7 @@ pub async fn generate_meeting_summary(
                 max_tokens,
                 temperature,
                 top_p,
+                top_k,
                 app_data_dir,
                 cancellation_token,
             )
@@ -564,6 +569,7 @@ pub async fn generate_meeting_summary(
                     max_tokens,
                     temperature,
                     top_p,
+                    top_k,
                     app_data_dir,
                     cancellation_token,
                 )
@@ -593,6 +599,7 @@ async fn run_markdown_transform(
     max_tokens: Option<u32>,
     temperature: Option<f32>,
     top_p: Option<f32>,
+    top_k: Option<i32>,
     app_data_dir: Option<&PathBuf>,
     cancellation_token: Option<&CancellationToken>,
 ) -> Result<String, String> {
@@ -614,6 +621,7 @@ async fn run_markdown_transform(
         max_tokens,
         temperature,
         top_p,
+        top_k,
         app_data_dir,
         cancellation_token,
     )
@@ -636,6 +644,7 @@ async fn translate_markdown(
     max_tokens: Option<u32>,
     temperature: Option<f32>,
     top_p: Option<f32>,
+    top_k: Option<i32>,
     app_data_dir: Option<&PathBuf>,
     cancellation_token: Option<&CancellationToken>,
 ) -> Result<String, String> {
@@ -659,6 +668,7 @@ async fn translate_markdown(
         max_tokens,
         temperature,
         top_p,
+        top_k,
         app_data_dir,
         cancellation_token,
     )
@@ -677,6 +687,7 @@ async fn normalize_markdown_to_english(
     max_tokens: Option<u32>,
     temperature: Option<f32>,
     top_p: Option<f32>,
+    top_k: Option<i32>,
     app_data_dir: Option<&PathBuf>,
     cancellation_token: Option<&CancellationToken>,
 ) -> Result<String, String> {
@@ -699,6 +710,7 @@ async fn normalize_markdown_to_english(
         max_tokens,
         temperature,
         top_p,
+        top_k,
         app_data_dir,
         cancellation_token,
     )

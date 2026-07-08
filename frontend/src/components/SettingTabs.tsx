@@ -31,7 +31,7 @@ export function SettingTabs({
     };
 
     return (
-        <Tabs defaultValue={defaultTab} className="w-full max-h-[calc(100vh-10rem)] overflow-y-auto" onValueChange={handleTabChange}>
+        <Tabs defaultValue={defaultTab} className="w-full" onValueChange={handleTabChange}>
   <TabsList>
     <TabsTrigger value="transcriptSettings">Transcript</TabsTrigger>
     <TabsTrigger value="modelSettings">Ai Summary</TabsTrigger>

@@ -5,10 +5,11 @@
 use super::engine::TranscriptionEngine;
 use super::provider::TranscriptionError;
 use crate::audio::AudioChunk;
+use crate::audio::diarization::SpeakerDiarizer;
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Runtime};
 
 // Sequence counter for transcript updates
@@ -17,10 +18,34 @@ static SEQUENCE_COUNTER: AtomicU64 = AtomicU64::new(0);
 // Speech detection flag - reset per recording session
 static SPEECH_DETECTED_EMITTED: AtomicBool = AtomicBool::new(false);
 
+// Global diarizer instance (per recording session)
+static DIARIZER: Mutex<Option<SpeakerDiarizer>> = Mutex::new(None);
+
 /// Reset the speech detected flag for a new recording session
 pub fn reset_speech_detected_flag() {
     SPEECH_DETECTED_EMITTED.store(false, Ordering::SeqCst);
     info!("🔍 SPEECH_DETECTED_EMITTED reset to: {}", SPEECH_DETECTED_EMITTED.load(Ordering::SeqCst));
+}
+
+/// Initialize diarizer for a new recording session
+pub fn init_diarizer(num_speakers: Option<u32>) {
+    let diarizer = match num_speakers {
+        Some(n) => SpeakerDiarizer::new().with_num_speakers(n),
+        None => SpeakerDiarizer::new(),
+    };
+    
+    if let Ok(mut guard) = DIARIZER.lock() {
+        *guard = Some(diarizer);
+        info!("🎤 Diarizer initialized with {:?} speakers", num_speakers);
+    }
+}
+
+/// Disable diarizer
+pub fn disable_diarizer() {
+    if let Ok(mut guard) = DIARIZER.lock() {
+        *guard = None;
+        info!("🎤 Diarizer disabled");
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -36,6 +61,8 @@ pub struct TranscriptUpdate {
     pub audio_start_time: f64, // Seconds from recording start (e.g., 125.3)
     pub audio_end_time: f64,   // Seconds from recording start (e.g., 128.6)
     pub duration: f64,          // Segment duration in seconds (e.g., 3.3)
+    // Speaker diarization
+    pub speaker_id: Option<u32>, // Speaker ID from diarization (0, 1, 2, etc.)
 }
 
 // NOTE: get_transcript_history and get_recording_meeting_name functions
@@ -143,6 +170,17 @@ pub fn start_transcription_task<R: Runtime>(
                             let chunk_timestamp = chunk.timestamp;
                             let chunk_duration = chunk.data.len() as f64 / chunk.sample_rate as f64;
 
+                            // Extract audio data for diarization BEFORE moving chunk into transcription
+                            let diarization_data = if let Ok(guard) = DIARIZER.lock() {
+                                if guard.is_some() {
+                                    Some((chunk.data.clone(), chunk.sample_rate))
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            };
+
                             // Transcribe with provider-agnostic approach
                             match transcribe_chunk_with_provider(
                                 &engine_clone,
@@ -196,6 +234,22 @@ pub fn start_transcription_task<R: Runtime>(
                                         let audio_start_time = chunk_timestamp; // Already in seconds from recording start
                                         let audio_end_time = chunk_timestamp + chunk_duration;
 
+                                        // Run speaker diarization if enabled (using pre-extracted data)
+                                        let speaker_id = if let Some((audio_data, sample_rate)) = diarization_data {
+                                            if let Ok(guard) = DIARIZER.lock() {
+                                                if let Some(diarizer) = guard.as_ref() {
+                                                    let segments = diarizer.diarize(&audio_data, sample_rate, chunk_timestamp);
+                                                    segments.first().map(|s| s.speaker_id)
+                                                } else {
+                                                    None
+                                                }
+                                            } else {
+                                                None
+                                            }
+                                        } else {
+                                            None
+                                        };
+
                                         // Save structured transcript segment to recording manager (only final results)
                                         // Save ALL segments (partial and final) to ensure complete JSON
                                         // Create structured segment with full timestamp data
@@ -217,6 +271,8 @@ pub fn start_transcription_task<R: Runtime>(
                                             audio_start_time,
                                             audio_end_time,
                                             duration: chunk_duration,
+                                            // Speaker diarization
+                                            speaker_id,
                                         };
 
                                         if let Err(e) = app_clone.emit("transcript-update", &update)

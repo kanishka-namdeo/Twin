@@ -16,6 +16,12 @@ export interface RecordingState {
   active_duration: number | null;
 }
 
+export interface AppState {
+  is_recording: boolean;
+  is_paused: boolean;
+  is_audio_level_monitoring: boolean;
+}
+
 export interface RecordingStoppedPayload {
   message: string;
   folder_path?: string;
@@ -32,7 +38,16 @@ export class RecordingService {
    * @returns Promise<boolean>
    */
   async isRecording(): Promise<boolean> {
-    return invoke<boolean>('is_recording');
+    const state = await this.getAppState();
+    return state.is_recording;
+  }
+
+  /**
+   * Get comprehensive app state (recording, paused, monitoring)
+   * @returns Promise<AppState>
+   */
+  async getAppState(): Promise<AppState> {
+    return invoke<AppState>('get_app_state');
   }
 
   /**
@@ -71,7 +86,7 @@ export class RecordingService {
     systemDeviceName: string | null,
     meetingName: string
   ): Promise<void> {
-    return invoke('start_recording_with_devices_and_meeting', {
+    return invoke('start_recording', {
       mic_device_name: micDeviceName,
       system_device_name: systemDeviceName,
       meeting_name: meetingName

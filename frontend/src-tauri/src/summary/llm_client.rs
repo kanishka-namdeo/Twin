@@ -68,10 +68,9 @@ pub struct ClaudeChatContent {
 pub enum LLMProvider {
     OpenAI,
     Claude,
-    Groq,
     Ollama,
-    OpenRouter,
     CustomOpenAI,
+    LocalLLM,  // NEW: Local LLM via llama-cpp-4
 }
 
 impl LLMProvider {
@@ -80,10 +79,9 @@ impl LLMProvider {
         match s.to_lowercase().as_str() {
             "openai" => Ok(Self::OpenAI),
             "claude" => Ok(Self::Claude),
-            "groq" => Ok(Self::Groq),
             "ollama" => Ok(Self::Ollama),
-            "openrouter" => Ok(Self::OpenRouter),
             "custom-openai" => Ok(Self::CustomOpenAI),
+            "local-llm" => Ok(Self::LocalLLM),
             _ => Err(format!("Unsupported LLM provider: {}", s)),
         }
     }
@@ -100,9 +98,10 @@ impl LLMProvider {
 /// * `user_prompt` - User query/content to process
 /// * `ollama_endpoint` - Optional custom Ollama endpoint (defaults to localhost:11434)
 /// * `custom_openai_endpoint` - Optional custom OpenAI-compatible endpoint
-/// * `max_tokens` - Optional max tokens (for CustomOpenAI provider)
-/// * `temperature` - Optional temperature (for CustomOpenAI provider)
-/// * `top_p` - Optional top_p (for CustomOpenAI provider)
+/// * `max_tokens` - Optional max tokens override
+/// * `temperature` - Optional temperature override
+/// * `top_p` - Optional top_p override
+/// * `top_k` - Optional top_k override (LocalLLM only)
 /// * `cancellation_token` - Optional token to cancel the request
 ///
 /// # Returns
@@ -119,7 +118,8 @@ pub async fn generate_summary(
     max_tokens: Option<u32>,
     temperature: Option<f32>,
     top_p: Option<f32>,
-    app_data_dir: Option<&PathBuf>,
+    top_k: Option<i32>,
+    _app_data_dir: Option<&PathBuf>,
     cancellation_token: Option<&CancellationToken>,
 ) -> Result<String, String> {
     // Check if cancelled before starting
@@ -129,17 +129,64 @@ pub async fn generate_summary(
         }
     }
 
+    // Handle LocalLLM provider separately (no HTTP calls)
+    if provider == &LLMProvider::LocalLLM {
+        let engine = {
+            let guard = crate::llm_engine::commands::LLM_ENGINE.lock().unwrap();
+            guard.as_ref().cloned()
+        };
+        
+        if let Some(engine) = engine {
+            let engine_guard = engine.lock().await;
+            
+            if !engine_guard.is_model_loaded() {
+                return Err("Local LLM model not loaded. Please download and load a model first.".to_string());
+            }
+
+            let engine_messages = vec![
+                crate::llm_engine::engine::ChatMessage {
+                    role: "system".to_string(),
+                    content: system_prompt.to_string(),
+                },
+                crate::llm_engine::engine::ChatMessage {
+                    role: "user".to_string(),
+                    content: user_prompt.to_string(),
+                },
+            ];
+
+            // Look up context_size from model catalog
+            let context_size = {
+                let current_model = engine_guard.get_current_model_name();
+                current_model
+                    .as_deref()
+                    .and_then(|name| crate::llm_engine::config::get_model_by_name(name))
+                    .map(|m| m.context_length)
+                    .unwrap_or(4096)
+            };
+
+            let config = crate::llm_engine::GenerationConfig {
+                max_tokens: max_tokens.unwrap_or(2048),
+                temperature: temperature.unwrap_or(0.7),
+                top_p: top_p.unwrap_or(0.9),
+                top_k: top_k.unwrap_or(40),
+                repeat_penalty: 1.1,
+                context_size,
+            };
+
+            // Run inference asynchronously
+            let result = engine_guard.chat_completion(engine_messages, config).await
+                .map_err(|e| format!("Local LLM inference failed: {}", e))?;
+
+            info!("🐞 LLM Response received from LocalLLM");
+            return Ok(result);
+        } else {
+            return Err("LLM engine not initialized".to_string());
+        }
+    }
+
     let (api_url, mut headers) = match provider {
         LLMProvider::OpenAI => (
             "https://api.openai.com/v1/chat/completions".to_string(),
-            header::HeaderMap::new(),
-        ),
-        LLMProvider::Groq => (
-            "https://api.groq.com/openai/v1/chat/completions".to_string(),
-            header::HeaderMap::new(),
-        ),
-        LLMProvider::OpenRouter => (
-            "https://openrouter.ai/api/v1/chat/completions".to_string(),
             header::HeaderMap::new(),
         ),
         LLMProvider::Ollama => {
@@ -174,6 +221,10 @@ pub async fn generate_summary(
                     .map_err(|_| "Invalid anthropic version".to_string())?,
             );
             ("https://api.anthropic.com/v1/messages".to_string(), header_map)
+        }
+        LLMProvider::LocalLLM => {
+            // This case should never be reached as LocalLLM is handled earlier
+            return Err("LocalLLM should not reach HTTP request handling".to_string());
         }
     };
 
@@ -314,9 +365,8 @@ fn provider_name(provider: &LLMProvider) -> &str {
     match provider {
         LLMProvider::OpenAI => "OpenAI",
         LLMProvider::Claude => "Claude",
-        LLMProvider::Groq => "Groq",
         LLMProvider::Ollama => "Ollama",
-        LLMProvider::OpenRouter => "OpenRouter",
         LLMProvider::CustomOpenAI => "Custom OpenAI",
+        LLMProvider::LocalLLM => "LocalLLM",
     }
 }

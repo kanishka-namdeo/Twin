@@ -50,7 +50,7 @@ export function TranscriptPanel({
   );
 
   return (
-    <div ref={transcriptContainerRef} className="w-full border-r border-gray-200 bg-white flex flex-col overflow-y-auto">
+    <div ref={transcriptContainerRef} className="w-full border-r border-gray-200 bg-white flex flex-col h-full overflow-hidden">
       {/* Title area - Sticky header */}
       <div className="sticky top-0 z-10 bg-white p-4 border-gray-200">
         <div className="flex flex-col space-y-3">
@@ -102,9 +102,9 @@ export function TranscriptPanel({
       )}
 
       {/* Transcript content */}
-      <div className="pb-20">
+      <div className="pb-20 px-4 sm:px-6 lg:px-8">
         <div className="flex justify-center">
-          <div className="w-2/3 max-w-[750px]">
+          <div className="w-full sm:w-5/6 md:w-3/4 lg:w-2/3 max-w-[750px]">
             <VirtualizedTranscriptView
               segments={segments}
               isRecording={isRecording}

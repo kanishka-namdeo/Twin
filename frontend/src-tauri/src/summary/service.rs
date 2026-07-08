@@ -301,6 +301,10 @@ impl SummaryService {
         custom_prompt: String,
         template_id: String,
         summary_language: Option<String>,
+        max_tokens: Option<u32>,
+        temperature: Option<f32>,
+        top_p: Option<f32>,
+        top_k: Option<i32>,
     ) {
         let start_time = Instant::now();
         info!(
@@ -320,8 +324,8 @@ impl SummaryService {
             }
         };
 
-        // Validate and setup api_key, Flexible for Ollama and CustomOpenAI
-        let api_key = if provider == LLMProvider::Ollama || provider == LLMProvider::CustomOpenAI {
+        // Validate and setup api_key, Flexible for Ollama, CustomOpenAI, and LocalLLM
+        let api_key = if provider == LLMProvider::Ollama || provider == LLMProvider::CustomOpenAI || provider == LLMProvider::LocalLLM {
             // These providers don't require API keys from the standard database column
             String::new()
         } else {
@@ -411,7 +415,7 @@ impl SummaryService {
                 }
             }
         } else {
-            // Cloud providers (OpenAI, Claude, Groq, CustomOpenAI) handle large contexts automatically
+            // Cloud providers (OpenAI, Claude, CustomOpenAI) handle large contexts automatically
             100000  // Effectively unlimited for single-pass processing
         };
 
@@ -441,6 +445,12 @@ impl SummaryService {
         };
         let template_fingerprint = template_cache_fingerprint(&template);
 
+        // Merge command params with CustomOpenAI config (command params take precedence)
+        let final_max_tokens = max_tokens.or(custom_openai_max_tokens);
+        let final_temperature = temperature.or(custom_openai_temperature);
+        let final_top_p = top_p.or(custom_openai_top_p);
+        let final_top_k = top_k;
+
         let cache_source = build_summary_cache_source(
             &text,
             &custom_prompt,
@@ -451,9 +461,9 @@ impl SummaryService {
             &model_name,
             ollama_endpoint.as_deref(),
             custom_openai_endpoint.as_deref(),
-            custom_openai_max_tokens,
-            custom_openai_temperature,
-            custom_openai_top_p,
+            final_max_tokens,
+            final_temperature,
+            final_top_p,
         );
 
         let cached_english = match SummaryProcessesRepository::get_summary_data(&pool, &meeting_id).await {
@@ -496,9 +506,10 @@ impl SummaryService {
             token_threshold,
             ollama_endpoint.as_deref(),
             custom_openai_endpoint.as_deref(),
-            custom_openai_max_tokens,
-            custom_openai_temperature,
-            custom_openai_top_p,
+            final_max_tokens,
+            final_temperature,
+            final_top_p,
+            final_top_k,
             app_data_dir.as_ref(),
             Some(&cancellation_token),
             summary_language.as_deref(),

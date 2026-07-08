@@ -15,14 +15,42 @@ This module owns:
 
 ## Local Contracts
 
-### Shutdown Sequence
+### Shutdown State Model
 
-1. Receive shutdown signal (user action or system signal)
-2. Stop audio capture and recording
-3. Flush pending transcriptions
-4. Release GPU resources
-5. Close database connections
-6. Exit application
+States:
+- Running: all systems active
+- SignalReceived: shutdown signal detected
+- DrainingAudio: stopping capture, flushing buffers
+- DrainingTranscription: flushing pending segments
+- ReleasingGPU: freeing model memory and GPU contexts
+- ClosingDB: persisting final state, closing connections
+- Exited: process terminated
+
+Transitions:
+- Running -> SignalReceived: on SIGTERM/SIGINT/window close
+- SignalReceived -> DrainingAudio: immediately
+- DrainingAudio -> DrainingTranscription: on audio stopped
+- DrainingTranscription -> ReleasingGPU: on transcription flushed
+- ReleasingGPU -> ClosingDB: on GPU resources freed
+- ClosingDB -> Exited: on connections closed
+
+Guards (illegal transitions):
+- Cannot skip DrainingAudio (data loss risk)
+- Cannot release GPU while transcription is draining
+- Cannot close DB while audio is still capturing
+
+### Deterministic Core
+
+- Shutdown ordering (enforced by guards above)
+- Resource deallocation sequence
+- Signal handling registration
+- RAII and Drop trait enforcement
+
+### Non-Deterministic Edges
+
+- Timeout durations for graceful drain
+- Logging verbosity during shutdown
+- Recovery strategy if a drain step hangs
 
 ### Resource Management
 

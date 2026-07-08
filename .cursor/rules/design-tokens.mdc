@@ -1,0 +1,86 @@
+---
+description: Design system tokens — colors, typography, spacing, shadows. Always applied when editing frontend code.
+globs: frontend/src/**/*.{tsx,ts,css}
+alwaysApply: false
+---
+
+# Design System: Tokens
+
+> **Scope**: Applies to all frontend source files. Governs color, typography, spacing, and shadow usage.
+> **Full spec**: `docs/design-system/tokens.md`
+
+## Color Rules
+
+### MUST use CSS custom properties, never hardcode colors
+
+```tsx
+// GOOD
+<div className="bg-[var(--accent)] text-[var(--accent-foreground)]">
+
+// BAD — hardcoded hex
+<div className="bg-[#0052FF] text-white">
+```
+
+### The Accent Gradient
+
+The signature gradient (`var(--accent)` → `var(--accent-secondary)`) is the primary visual identity. Use it on:
+- Primary buttons: `bg-gradient-to-r from-[var(--accent)] to-[var(--accent-secondary)]`
+- Featured badges and icon containers
+- Text highlights: `.gradient-text` class
+- Gradient borders on featured cards
+
+### Inverted Sections
+
+For dramatic contrast, use `bg-[var(--foreground)] text-[var(--background)]` with dot pattern texture.
+
+## Typography Rules
+
+### Font Assignment
+
+| Role | CSS Variable | Class |
+|:-----|:-------------|:------|
+| Display headlines (h1/h2) | `--font-display` (Calistoga) | `font-display` |
+| Body & UI | `--font-sans` (Inter) | `font-sans` (default) |
+| Monospace labels | `--font-mono` (JetBrains Mono) | `font-mono` |
+
+### Type Scale
+
+- Hero headlines: `text-5xl` to `text-[5.25rem]`, tight leading (`leading-[1.05]`)
+- Section headlines: `text-3xl` to `text-[3.25rem]`, `leading-[1.15]`
+- Card titles: `text-lg` to `text-2xl`, `font-semibold`
+- Body: `text-base` to `text-lg`, `leading-relaxed` (1.625+)
+- Section labels: `text-xs font-mono uppercase tracking-[0.15em]`
+
+### Gradient Text
+
+Apply to the key word in headlines:
+
+```tsx
+<h2 className="font-display text-4xl">
+  Headline with <span className="gradient-text">highlighted</span> word
+</h2>
+```
+
+## Spacing Rules
+
+- Section vertical padding: `py-28` to `py-44`
+- Container: `mx-auto max-w-6xl px-6`
+- Card padding: `p-6` to `p-10`
+- Grid gaps: `gap-5` to `gap-8`
+
+## Shadow Rules
+
+| Context | Class |
+|:--------|:------|
+| Subtle lift | `shadow-sm` |
+| Standard card | `shadow-md` |
+| Elevated card | `shadow-lg` |
+| Hero element | `shadow-xl` |
+| Accent hover | Use inline: `shadow-[0_4px_14px_rgba(0,82,255,0.25)]` |
+
+## Border Radius
+
+- Buttons: `rounded-xl` (12px)
+- Cards: `rounded-xl` or `rounded-2xl`
+- Inputs: `rounded-lg` or `rounded-xl`
+- Badges: `rounded-full`

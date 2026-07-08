@@ -42,10 +42,10 @@ default = ["platform-default"]  # Automatically enables best backend per platfor
 platform-default = []
 
 # Manual GPU acceleration options (for power users to override defaults)
-metal = ["whisper-rs/metal"]       # macOS: Apple Metal GPU (Auto-enabled on macOS)
+metal = ["whisper-rs/metal", "llama-cpp-4/metal"]       # macOS: Apple Metal GPU (Auto-enabled on macOS)
 coreml = ["whisper-rs/coreml"]     # macOS: Apple CoreML acceleration
-cuda = ["whisper-rs/cuda", "ort/cuda"]  # Windows/Linux: NVIDIA CUDA GPU
-vulkan = ["whisper-rs/vulkan"]     # Windows/Linux: AMD/Intel Vulkan GPU
+cuda = ["whisper-rs/cuda", "ort/cuda", "llama-cpp-4/cuda"]  # Windows/Linux: NVIDIA CUDA GPU
+vulkan = ["whisper-rs/vulkan", "llama-cpp-4/vulkan"]     # Windows/Linux: AMD/Intel Vulkan GPU
 hipblas = ["whisper-rs/hipblas"]   # Linux: AMD ROCm HIP
 
 # CPU optimizations (fallback for systems without GPU)
@@ -87,9 +87,6 @@ which = "6.0.1"
 
 # Bytes
 bytemuck = "1.16.1"
-
-# EBU R128 loudness normalization (professional broadcast standard)
-ebur128 = "0.1"
 
 # Noise suppression - RNNoise-based neural network noise reduction
 nnnoiseless = "0.5"
@@ -175,6 +172,9 @@ futures-channel = "0.3.31"
 # CoreML provides additional acceleration for Apple Silicon chips
 whisper-rs = { version = "0.16.0", features = ["raw-api", "metal", "coreml"] }
 
+# Local LLM inference with Metal GPU acceleration
+llama-cpp-4 = { version = "0.3", features = ["metal"] }
+
 # Windows-specific dependencies
 # Default: CPU-only build (no BLAS)
 # Users can enable features manually:
@@ -184,6 +184,9 @@ whisper-rs = { version = "0.16.0", features = ["raw-api", "metal", "coreml"] }
 [target.'cfg(target_os = "windows")'.dependencies]
 whisper-rs = { version = "0.16.0", features = ["raw-api"] }
 futures-channel = "0.3.31"
+
+# Local LLM inference (CPU-only by default, enable cuda/vulkan features above)
+llama-cpp-4 = { version = "0.3" }
 
 # Linux-specific dependencies
 # Default: CPU-only build (no BLAS)
@@ -195,6 +198,9 @@ futures-channel = "0.3.31"
 [target.'cfg(target_os = "linux")'.dependencies]
 whisper-rs = { version = "0.16.0", features = ["raw-api"] }
 futures-channel = "0.3.31"
+
+# Local LLM inference (CPU-only by default, enable cuda/vulkan features above)
+llama-cpp-4 = { version = "0.3" }
 
 [dev-dependencies]
 tempfile = "3.3.0"

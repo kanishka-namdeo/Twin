@@ -1,0 +1,107 @@
+---
+description: Design system component patterns — buttons, cards, inputs, badges. Applied when editing UI primitives.
+globs: frontend/src/components/ui/**/*.tsx
+alwaysApply: false
+---
+
+# Design System: Component Patterns
+
+> **Scope**: Applies to shadcn/ui component files. Governs how components are styled and composed.
+> **Full spec**: `docs/design-system/components.md`
+
+## Core Principles
+
+- All components use `cva` + `tailwind-merge` via `cn()` from `@/lib/utils`
+- Follow shadcn/ui New York style conventions
+- Use CSS custom properties (`var(--token)`) for all colors — never hardcode hex values
+- Prefer Tailwind utility classes over inline styles
+
+## Button Contract
+
+### Variants (CVA)
+
+```typescript
+const buttonVariants = cva(baseClasses, {
+  variants: {
+    variant: {
+      default: "bg-gradient-to-r from-[var(--accent)] to-[var(--accent-secondary)] text-white shadow-sm hover:shadow-[0_4px_14px_rgba(0,82,255,0.25)]",
+      outline: "border border-[var(--border)] bg-transparent hover:bg-[var(--muted)]",
+      secondary: "bg-[var(--secondary)] text-[var(--secondary-foreground)]",
+      ghost: "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)]",
+      destructive: "bg-[var(--destructive)] text-[var(--destructive-foreground)]",
+      link: "text-[var(--accent)] underline-offset-4 hover:underline",
+    },
+    size: {
+      sm: "h-9 px-3 text-xs rounded-lg",
+      default: "h-10 px-4 text-sm rounded-xl",
+      lg: "h-12 px-6 text-base rounded-xl",
+      icon: "h-10 w-10 rounded-xl",
+    },
+  },
+});
+```
+
+### Hover Behavior
+
+- Lift: `hover:-translate-y-0.5`
+- Active press: `active:scale-[0.98]`
+- Transition: `transition-all duration-200`
+- Arrow icons: `group-hover:translate-x-1`
+
+## Card Contract
+
+### Standard Card
+
+```tsx
+<Card className="rounded-xl border border-[var(--border)] bg-[var(--card)] shadow-md hover:shadow-xl transition-all duration-300">
+```
+
+### Featured Card (Gradient Border)
+
+```tsx
+<div className="rounded-xl bg-gradient-to-br from-[var(--accent)] via-[var(--accent-secondary)] to-[var(--accent)] p-[2px]">
+  <div className="h-full w-full rounded-[calc(12px-2px)] bg-[var(--card)]">
+    {/* content */}
+  </div>
+</div>
+```
+
+### Hover Effects
+
+- Gradient overlay: `bg-gradient-to-br from-accent/[0.03] to-transparent`
+- Shadow deepens: `shadow-md` → `shadow-xl`
+- Icon scale: `group-hover:scale-110`
+
+## Input Contract
+
+- Height: `h-12` to `h-14`
+- Border: `1px` in `border` color
+- Border-radius: `rounded-lg` or `rounded-xl`
+- Focus: `ring-2 ring-[var(--accent)] ring-offset-2`
+- Placeholder: `text-[var(--muted-foreground)]/50`
+
+## Badge / Section Label Contract
+
+```tsx
+<div className="inline-flex items-center gap-3 rounded-full border border-[var(--accent)]/30 bg-[var(--accent)]/5 px-5 py-2">
+  <span className="h-2 w-2 rounded-full bg-[var(--accent)]" />
+  <span className="font-mono text-xs uppercase tracking-[0.15em] text-[var(--accent)]">
+    Label
+  </span>
+</div>
+```
+
+## Icon Container Contract
+
+```tsx
+<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-[var(--accent)] to-[var(--accent-secondary)] text-white">
+  <Icon className="h-6 w-6" />
+</div>
+```
+
+## Accessibility
+
+- Touch targets: minimum `44px` (`h-11` or `h-12`)
+- Focus rings: `ring-2 ring-[var(--accent)] ring-offset-2`
+- Color contrast: all text must meet WCAG AA
+- Respect `prefers-reduced-motion` for continuous animations

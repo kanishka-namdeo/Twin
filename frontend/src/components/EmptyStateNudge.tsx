@@ -26,7 +26,7 @@ export function EmptyStateNudge({ onClose }: EmptyStateNudgeProps) {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center h-full p-8 animate-in fade-in duration-300">
+    <div className="flex flex-col items-center justify-center min-h-[400px] p-8 animate-in fade-in duration-300">
       <div className="max-w-md w-full bg-white rounded-lg border border-gray-200 shadow-sm p-8 space-y-6">
         {/* Icon */}
         <div className="flex justify-center">

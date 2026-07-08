@@ -1,5 +1,9 @@
+pub mod action_item;
+pub mod fts_search;
 pub mod meeting;
+pub mod meeting_notes;
 pub mod setting;
+pub mod speaker;
 pub mod summary;
 pub mod transcript;
 pub mod transcript_chunk;

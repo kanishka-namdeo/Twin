@@ -34,6 +34,9 @@ export interface VirtualizedTranscriptViewProps {
     totalCount?: number;
     loadedCount?: number;
     onLoadMore?: () => void;
+
+    // Audio sync
+    highlightSegmentId?: string | null;
 }
 
 // Threshold for enabling virtualization (below this, use simple rendering)
@@ -70,16 +73,41 @@ const TranscriptSegment = memo(function TranscriptSegment({
     text,
     confidence,
     isStreaming,
+    isPartial,
     showConfidence,
+    isHighlighted,
 }: {
     id: string;
     timestamp: number;
     text: string;
     confidence?: number;
     isStreaming: boolean;
+    isPartial?: boolean;
     showConfidence: boolean;
+    isHighlighted?: boolean;
 }) {
     const displayText = cleanStopWords(text) || (text.trim() === '' ? '[Silence]' : text);
+
+    // Get confidence-based background color
+    const getConfidenceBg = () => {
+        if (confidence === undefined) return '';
+        if (confidence < 0.5) return 'bg-red-50';
+        if (confidence < 0.7) return 'bg-yellow-50';
+        return '';
+    };
+
+    // Get text color based on partial/final
+    const getTextColor = () => {
+        if (isStreaming) return 'text-gray-500';
+        if (isPartial) return 'text-gray-500';
+        return 'text-gray-800';
+    };
+
+    // Get highlight styling
+    const getHighlightClass = () => {
+        if (!isHighlighted) return '';
+        return 'ring-2 ring-blue-400 bg-blue-50';
+    };
 
     return (
         <div id={`segment-${id}`} className="mb-3">
@@ -91,18 +119,27 @@ const TranscriptSegment = memo(function TranscriptSegment({
                         </span>
                     </TooltipTrigger>
                     <TooltipContent>
-                        {confidence !== undefined && showConfidence && (
-                            <ConfidenceIndicator confidence={confidence} showIndicator={showConfidence} />
-                        )}
+                        <div className="flex flex-col gap-1">
+                            {confidence !== undefined && showConfidence && (
+                                <>
+                                    <ConfidenceIndicator confidence={confidence} showIndicator={showConfidence} />
+                                    <span className="text-xs text-gray-500">
+                                        {(confidence * 100).toFixed(0)}% confidence
+                                    </span>
+                                </>
+                            )}
+                        </div>
                     </TooltipContent>
                 </Tooltip>
                 <div className="flex-1">
                     {isStreaming ? (
                         <div className="bg-gray-100 border border-gray-200 rounded-lg px-3 py-2">
-                            <p className="text-base text-gray-800 leading-relaxed">{displayText}</p>
+                            <p className="text-base text-gray-500 leading-relaxed">{displayText}</p>
                         </div>
                     ) : (
-                        <p className="text-base text-gray-800 leading-relaxed">{displayText}</p>
+                        <div className={`rounded px-3 py-2 ${getConfidenceBg()} ${getHighlightClass()} transition-all`}>
+                            <p className={`text-base leading-relaxed ${getTextColor()}`}>{displayText}</p>
+                        </div>
                     )}
                 </div>
             </div>
@@ -124,6 +161,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
     totalCount = 0,
     loadedCount = 0,
     onLoadMore,
+    highlightSegmentId = null,
 }) => {
     // Create scroll ref first - shared between virtualizer and auto-scroll hook
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -296,6 +334,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                         confidence={segment.confidence}
                                         isStreaming={isStreaming}
                                         showConfidence={showConfidence}
+                                        isHighlighted={highlightSegmentId === segment.id}
                                     />
                                 </div>
                             );
@@ -352,6 +391,7 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                                         confidence={segment.confidence}
                                         isStreaming={isStreaming}
                                         showConfidence={showConfidence}
+                                        isHighlighted={highlightSegmentId === segment.id}
                                     />
                                 </motion.div>
                             );

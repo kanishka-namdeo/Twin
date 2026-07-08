@@ -1,0 +1,173 @@
+---
+description: Design system layout, animation, and interaction patterns. Applied when editing pages and feature components.
+globs: frontend/src/app/**/*.tsx,frontend/src/components/**/*.tsx
+alwaysApply: false
+---
+
+# Design System: Layout & Animation
+
+> **Scope**: Applies to page-level components and feature components. Governs section structure, grid layouts, animations, and responsive behavior.
+> **Full spec**: `docs/design-system/layout.md`
+
+## Section Structure
+
+Every major section follows this pattern:
+
+```tsx
+<section className="py-32">
+  <div className="mx-auto max-w-6xl px-6">
+    {/* 1. Section label badge */}
+    <div className="mb-8 inline-flex items-center gap-3 rounded-full border border-[var(--accent)]/30 bg-[var(--accent)]/5 px-5 py-2">
+      <span className="h-2 w-2 rounded-full bg-[var(--accent)]" />
+      <span className="font-mono text-xs uppercase tracking-[0.15em] text-[var(--accent)]">
+        Section Name
+      </span>
+    </div>
+
+    {/* 2. Headline — key word gets gradient text */}
+    <h2 className="font-display text-4xl leading-tight tracking-tight md:text-[3.25rem]">
+      Headline with <span className="gradient-text">highlight</span>
+    </h2>
+
+    {/* 3. Content grid */}
+    <div className="mt-16 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+      {/* Cards */}
+    </div>
+  </div>
+</section>
+```
+
+## Grid Patterns
+
+| Layout | Grid | Usage |
+|:-------|:-----|:------|
+| Hero | `grid-cols-[1.1fr_0.9fr]` | Asymmetric text + graphic |
+| Features | `grid-cols-1 md:grid-cols-2 lg:grid-cols-3` | Responsive card grid |
+| Stats | `grid-cols-2 md:grid-cols-4` | Metric cards |
+
+## Inverted Sections
+
+For dramatic contrast, flip the palette:
+
+```tsx
+<section className="bg-[var(--foreground)] text-[var(--background)]">
+  <div className="relative">
+    <div className="absolute inset-0 opacity-[0.03]" style={{
+      backgroundImage: 'radial-gradient(circle, currentColor 1px, transparent 1px)',
+      backgroundSize: '32px 32px'
+    }} />
+    {/* Content with relative z-index */}
+  </div>
+</section>
+```
+
+## Radial Glow Decorations
+
+Place at section corners for ambient warmth:
+
+```tsx
+<div className="pointer-events-none absolute -top-32 left-1/2 h-[500px] w-[500px] -translate-x-1/2 rounded-full bg-[var(--accent)] opacity-[0.03] blur-[150px]" />
+```
+
+## Animation Rules
+
+### Entrance Animations (Framer Motion)
+
+```typescript
+const easeOut = [0.16, 1, 0.3, 1] as const;
+
+const fadeInUp = {
+  hidden: { opacity: 0, y: 28 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.7, ease: easeOut } }
+};
+
+const stagger = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.1, delayChildren: 0.1 } }
+};
+```
+
+Viewport: `{ once: true, amount: 0.15, margin: "-60px" }`
+
+### Transition Defaults
+
+| Context | Duration | Class |
+|:--------|:---------|:------|
+| Standard | `200ms` | `transition-all duration-200` |
+| Hover lift | `300ms` | `transition-all duration-300` |
+| Entrance | `700ms` | Framer Motion `duration: 0.7` |
+
+### Continuous Animations
+
+- Pulsing dot: `animate-pulse` or custom `2s` keyframe
+- Floating elements: `4-5s` ease-in-out, ±10px y-axis
+- Respect `prefers-reduced-motion`
+
+## Responsive Rules
+
+- Mobile first: single column, full-width buttons (`w-full sm:w-auto`)
+- Headlines scale: `text-[2.75rem]` → `text-6xl` → `text-[5.25rem]`
+- Section padding: `py-28` → `py-44`
+- Hide decorative elements on mobile: `hidden lg:block`
+- Touch targets: 44px minimum on all interactive elements
+
+## Desktop App Rules
+
+> **This is a Tauri desktop app, not a website.** Desktop-specific constraints apply.
+> **Full spec**: `docs/design-system/layout.md` → "Desktop App Layout Principles"
+
+### Panel Layout
+
+- Sidebar and main content MUST use `react-resizable-panels` (shadcn `Resizable`) for drag-to-resize
+- Sidebar: `minSize={20}` (240px), `maxSize={35}` (400px), `defaultSize={25}` (256px)
+- Collapsed sidebar: `64px` icon-only mode
+- Persist sidebar width via `autoSaveId` in localStorage
+- At `<768px`, sidebar becomes a Sheet drawer (not resizable)
+
+### Component Placement
+
+| Region | Behavior |
+|:-------|:---------|
+| Sidebar | Fixed width, full height, always visible |
+| Main content | Flexible, fills remaining space, scrolls internally |
+| Primary actions | Top-right of content area or top of sidebar |
+| Navigation | Left sidebar only, never buried in dropdowns |
+
+### Resize Behavior
+
+- No hardcoded pixel widths on layout containers — use `flex`, `grid`, or panel constraints
+- Debounce resize handlers (150ms or `requestAnimationFrame`)
+- Content should show MORE as window grows (more columns, more rows), not just stretch
+- Text content: cap line width at ~65 characters for readability
+- `transition-all duration-300` on layout shifts (sidebar collapse/expand)
+
+### Window Constraints
+
+- Minimum window size: `900×600` (set in `tauri.conf.json`)
+- Default window size: `1100×700` (not maximized)
+- Never open maximized by default
+- Save/restore window size and position across sessions
+
+### Keyboard Shortcuts
+
+Desktop users expect keyboard shortcuts. Register globally:
+
+| Action | Shortcut |
+|:-------|:---------|
+| New meeting | `Cmd/Ctrl+N` |
+| Search | `Cmd/Ctrl+K` |
+| Toggle sidebar | `Cmd/Ctrl+B` |
+| Settings | `Cmd/Ctrl+,` |
+| Close/Cancel | `Escape` |
+
+## DO NOT
+
+- Use hardcoded color values — always use `var(--token)`
+- Center everything — embrace strategic asymmetry
+- Use flat backgrounds everywhere — use inverted sections and gradient glows
+- Skip animations — the design should feel alive
+- Use `text-black` or `text-white` — use `var(--foreground)` and `var(--background)`
+- Use fixed pixel widths for main layout — use flex/grid/panels
+- Use `transform: translate` for sidebar sliding — use panel library or `margin`
+- Open window maximized — choose a useful default size
+- Let panels resize below minimum usable size

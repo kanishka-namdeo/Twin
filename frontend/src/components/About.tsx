@@ -47,7 +47,7 @@ export function About() {
     };
 
     return (
-        <div className="p-4 space-y-4 h-[80vh] overflow-y-auto">
+        <div className="p-4 space-y-4 max-h-[70vh] overflow-y-auto">
             {/* Compact Header */}
             <div className="text-center">
                 <div className="mb-3">

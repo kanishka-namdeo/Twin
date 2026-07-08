@@ -42,6 +42,41 @@ await listen<TranscriptUpdate>('transcript-update', (event) => {
 - `SidebarProvider.tsx`: Global state (meetings, recording status)
 - Pattern: Rust state → emit event → React listener → context update
 
+### Meeting Recording State Model
+
+States:
+- NoMeeting: idle, no recording active
+- Configuring: user selecting devices and meeting name
+- Recording: audio capture in progress, transcript streaming
+- Reviewing: recording stopped, viewing transcript
+- Saved: meeting persisted
+
+Transitions:
+- NoMeeting -> Configuring: on "New Meeting" action
+- Configuring -> Recording: on start_recording invoke success
+- Recording -> Reviewing: on stop_recording invoke
+- Reviewing -> Saved: on save action
+- Reviewing -> NoMeeting: on discard
+- Configuring -> NoMeeting: on cancel
+
+Guards:
+- Cannot start recording without device confirmation
+- Cannot save without a completed recording
+- Cannot start new recording while one is active
+
+### Deterministic Core
+
+- State transitions (enforced by guards above)
+- Tauri IPC call signatures and event listener contracts
+- Component ownership boundaries
+- Global state shape in SidebarProvider
+
+### Non-Deterministic Edges
+
+- UI layout and component decomposition
+- Transcript rendering strategy
+- Error message wording and UX feedback
+
 ### Error Handling
 
 ```typescript
@@ -53,6 +88,32 @@ try {
 ```
 
 ## Work Guidance
+
+### Design System
+
+All UI work must follow the design system rules. See `docs/design-system/` for full specs.
+
+| Doc | Governs |
+|:----|:--------|
+| `docs/design-system/tokens.md` | Colors, typography, spacing, shadows |
+| `docs/design-system/components.md` | Button, card, input, badge patterns |
+| `docs/design-system/layout.md` | Section structure, grids, animation, responsive, **desktop layout** |
+
+Cursor rules enforce these automatically:
+- `design-tokens.mdc` — always loaded for frontend files
+- `design-components.mdc` — loaded when editing `components/ui/`
+- `design-layout.mdc` — loaded when editing pages and feature components
+
+### Desktop App Constraints
+
+This is a Tauri desktop app, not a website. Key constraints:
+
+- **Resizable panels**: Sidebar + content use `react-resizable-panels`, not fixed margins
+- **Window**: Min size `900×600`, default `1100×700`, never open maximized
+- **State persistence**: Save window size/position and sidebar width across sessions
+- **Keyboard shortcuts**: `Cmd/Ctrl+N` (new), `Cmd/Ctrl+K` (search), `Cmd/Ctrl+B` (toggle sidebar), `Escape` (cancel)
+- **No hardcoded widths**: Use flex/grid/panel constraints, not pixel widths
+- **Content scaling**: Show more content as window grows, don't just stretch
 
 ### Performance
 
@@ -90,4 +151,16 @@ pnpm run build
 
 ## Child DOX Index
 
-This module has no child docs.
+| Path | Scope | Purpose |
+|------|-------|---------|
+| `docs/design-system/` | Design system | Tokens, component patterns, layout & animation rules |
+
+### Frontend Sub-modules (no separate AGENTS.md — documented here)
+
+| Path | Scope | Purpose |
+|------|-------|---------|
+| `frontend/src/components/` | UI components | React components for recording, transcript, settings, sidebar, onboarding |
+| `frontend/src/services/` | Service layer | Typed wrappers for Tauri IPC (configService, recordingService) |
+| `frontend/src/contexts/` | React context | Global state management (ConfigContext for model/device/language prefs) |
+| `frontend/src/types/` | TypeScript types | Shared type definitions (llm.ts, betaFeatures.ts) |
+| `frontend/src/app/` | Next.js pages | App router pages (home, meeting-details, settings, notes, action-items) |

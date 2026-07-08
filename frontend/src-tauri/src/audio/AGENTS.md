@@ -35,6 +35,47 @@ Raw Audio (Mic + System)
 
 **Key Insight**: Professional mixing for recording, VAD for transcription (only speech segments).
 
+### Recording Workflow State Model
+
+States:
+- Idle: no active recording, devices available
+- DeviceSelection: user choosing mic/system devices
+- Initializing: audio streams being created, permissions requested
+- Capturing: audio flowing to mixer and VAD
+- Paused: capture suspended, streams held
+- Stopping: draining buffers, flushing recording
+- Error: capture failed, needs recovery
+
+Transitions:
+- Idle -> DeviceSelection: on user request
+- DeviceSelection -> Initializing: on device confirmation
+- Initializing -> Capturing: on streams ready
+- Capturing -> Paused: on pause command
+- Paused -> Capturing: on resume command
+- Capturing -> Stopping: on stop command
+- Stopping -> Idle: on buffers flushed
+- Any -> Error: on capture failure
+- Error -> Idle: on recovery complete
+
+Guards:
+- Cannot enter Capturing without device confirmation
+- Cannot stop without being in Capturing or Paused
+- Cannot transition to Idle from Capturing without Stopping
+
+### Deterministic Core
+
+- Device discovery and validation logic
+- Audio buffer management and ring buffer sync
+- State transitions (enforced by guards above)
+- File path resolution for recordings
+- Platform-specific capture API selection
+
+### Non-Deterministic Edges
+
+- VAD threshold tuning and speech detection heuristics
+- Audio mixing strategy (ducking levels, gain staging)
+- Error recovery approach selection
+
 ### Module Structure
 
 | Issue Type | Location |

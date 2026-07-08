@@ -69,6 +69,7 @@ pub async fn validate_transcription_model_ready<R: Runtime>(app: &AppHandle<R>) 
             config
         }
         Ok(None) => {
+            // No config - default to parakeet
             info!("📝 No transcript config found, defaulting to parakeet");
             crate::api::api::TranscriptConfig {
                 provider: "parakeet".to_string(),
@@ -77,6 +78,7 @@ pub async fn validate_transcription_model_ready<R: Runtime>(app: &AppHandle<R>) 
             }
         }
         Err(e) => {
+            // Error getting config - default to parakeet
             warn!("⚠️ Failed to get transcript config: {}, defaulting to parakeet", e);
             crate::api::api::TranscriptConfig {
                 provider: "parakeet".to_string(),

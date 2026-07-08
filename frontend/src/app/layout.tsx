@@ -1,7 +1,7 @@
 'use client'
 
 import './globals.css'
-import { Source_Sans_3 } from 'next/font/google'
+import { Source_Sans_3, Calistoga, JetBrains_Mono } from 'next/font/google'
 import Sidebar from '@/components/Sidebar'
 import { SidebarProvider } from '@/components/Sidebar/SidebarProvider'
 import MainContent from '@/components/MainContent'
@@ -30,6 +30,17 @@ const sourceSans3 = Source_Sans_3({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700'],
   variable: '--font-source-sans-3',
+})
+
+const calistoga = Calistoga({
+  weight: '400',
+  subsets: ['latin'],
+  variable: '--font-calistoga',
+})
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ['latin'],
+  variable: '--font-jetbrains-mono',
 })
 
 // Module-level component — stable reference across RootLayout re-renders.
@@ -231,7 +242,7 @@ export default function RootLayout({
 
   return (
     <html lang="en">
-      <body className={`${sourceSans3.variable} font-sans antialiased`}>
+      <body className={`${sourceSans3.variable} ${calistoga.variable} ${jetbrainsMono.variable} font-sans antialiased`}>
         <RecordingStateProvider>
           <TranscriptProvider>
             <ConfigProvider>
@@ -249,7 +260,7 @@ export default function RootLayout({
                             {showOnboarding ? (
                               <OnboardingFlow onComplete={handleOnboardingComplete} />
                             ) : (
-                              <div className="flex">
+                              <div className="flex h-screen overflow-hidden">
                                 <Sidebar />
                                 <MainContent>{children}</MainContent>
                               </div>

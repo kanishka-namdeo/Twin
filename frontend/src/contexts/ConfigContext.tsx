@@ -57,9 +57,7 @@ interface ConfigContextType {
   // Provider-specific API keys
   providerApiKeys: {
     claude: string | null;
-    groq: string | null;
     openai: string | null;
-    openrouter: string | null;
   };
   updateProviderApiKey: (provider: string, apiKey: string | null) => void;
 
@@ -89,17 +87,12 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   });
 
   // Provider-specific API keys (loaded once at startup)
-  // Note: Gemini omitted for now - add when UI support is added
   const [providerApiKeys, setProviderApiKeys] = useState<{
     claude: string | null;
-    groq: string | null;
     openai: string | null;
-    openrouter: string | null;
   }>({
     claude: null,
-    groq: null,
     openai: null,
-    openrouter: null,
   });
 
   // Ollama models list and error state
@@ -270,7 +263,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const loadAllApiKeys = async () => {
       try {
-        const providers = ['claude', 'groq', 'openai', 'openrouter'];
+        const providers = ['claude', 'openai'];
         const keys = await Promise.all(
           providers.map(p =>
             invoke<string>('api_get_api_key', { provider: p })
@@ -280,9 +273,7 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
 
         setProviderApiKeys({
           claude: keys[0],
-          groq: keys[1],
-          openai: keys[2],
-          openrouter: keys[3],
+          openai: keys[1],
         });
         console.log('[ConfigContext] Loaded provider API keys');
       } catch (error) {
@@ -340,10 +331,9 @@ export function ConfigProvider({ children }: { children: ReactNode }) {
   const modelOptions: Record<ModelConfig['provider'], string[]> = {
     ollama: models.map(model => model.name),
     claude: ['claude-3-5-sonnet-latest'],
-    groq: ['llama-3.3-70b-versatile'],
-    openrouter: [],
     openai: ['gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo'],
     'custom-openai': [],
+    'local-llm': [],
   };
 
   // Toggle confidence indicator with localStorage persistence

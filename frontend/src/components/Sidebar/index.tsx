@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { ChevronDown, ChevronRight, File, Settings, ChevronLeftCircle, ChevronRightCircle, Calendar, StickyNote, Home, Trash2, Mic, Square, Plus, Search, Pencil, NotebookPen, SearchIcon, X, Upload, Download } from 'lucide-react';
+import { ChevronDown, ChevronRight, File, Settings, ChevronLeftCircle, ChevronRightCircle, Calendar, StickyNote, Home, Trash2, Mic, Square, Plus, Search, Pencil, NotebookPen, SearchIcon, X, Upload, Download, Filter, CheckCircle, ClipboardList } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useSidebar } from './SidebarProvider';
 import type { CurrentMeeting } from '@/components/Sidebar/SidebarProvider';
@@ -24,6 +24,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { VisuallyHidden } from "@/components/ui/visually-hidden"
+import { Badge } from '@/components/ui/badge';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Label } from '@/components/ui/label';
 
 import { MessageToast } from '../MessageToast';
 import Logo from '../Logo';
@@ -53,7 +56,13 @@ const Sidebar: React.FC = () => {
     isSearching,
     meetings,
     setMeetings,
-    serverAddress
+    serverAddress,
+    // FTS5 search
+    searchMeetingsFts,
+    ftsSearchResults,
+    searchFilters,
+    setSearchFilters,
+    clearSearchFilters,
   } = useSidebar();
 
   // Get recording state from RecordingStateContext (single source of truth)
@@ -64,6 +73,7 @@ const Sidebar: React.FC = () => {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(['meetings']));
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [showModelSettings, setShowModelSettings] = useState(false);
+  const [showSearchFilters, setShowSearchFilters] = useState(false);
   const [modelConfig, setModelConfig] = useState<ModelConfig>({
     provider: 'ollama',
     model: '',
@@ -232,15 +242,17 @@ const Sidebar: React.FC = () => {
     }
   };
 
-  // Handle search input changes
+  // Handle search input changes - use FTS5 search
   const handleSearchChange = useCallback(async (value: string) => {
     setSearchQuery(value);
 
     // If search query is empty, just return to normal view
-    if (!value.trim()) return;
+    if (!value.trim()) {
+      return;
+    }
 
-    // Search through transcripts
-    await searchTranscripts(value);
+    // Use FTS5 search with current filters
+    await searchMeetingsFts(value, searchFilters);
 
     // Make sure the meetings folder is expanded when searching
     if (!expandedFolders.has('meetings')) {
@@ -248,16 +260,28 @@ const Sidebar: React.FC = () => {
       newExpanded.add('meetings');
       setExpandedFolders(newExpanded);
     }
-  }, [expandedFolders, searchTranscripts]);
+  }, [expandedFolders, searchMeetingsFts, searchFilters]);
 
-  // Combine search results with sidebar items
+  // Count active filters
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (searchFilters.date_from) count++;
+    if (searchFilters.date_to) count++;
+    if (searchFilters.min_duration) count++;
+    if (searchFilters.has_summary !== null) count++;
+    return count;
+  }, [searchFilters]);
+
+  // Combine FTS5 search results with sidebar items
   const filteredSidebarItems = useMemo(() => {
     if (!searchQuery.trim()) return sidebarItems;
 
-    // If we have search results, highlight matching meetings
-    if (searchResults.length > 0) {
-      // Get the IDs of meetings that matched in transcripts
-      const matchedMeetingIds = new Set(searchResults.map(result => result.id));
+    // If we have FTS5 search results, highlight matching meetings with snippets
+    if (ftsSearchResults.length > 0) {
+      // Get the IDs of meetings that matched
+      const matchedMeetingIds = new Set(ftsSearchResults.map(result => result.meeting_id));
+      // Create a map of meeting ID to snippet for display
+      const snippetMap = new Map(ftsSearchResults.map(result => [result.meeting_id, result.snippet]));
 
       return sidebarItems
         .map(folder => {
@@ -287,7 +311,7 @@ const Sidebar: React.FC = () => {
         })
         .filter((item): item is SidebarItem => item !== undefined); // Type-safe filter
     } else {
-      // Fall back to title-only filtering if no transcript results
+      // Fall back to title-only filtering if no FTS5 results
       return sidebarItems
         .map(folder => {
           // Always include folders in the results
@@ -310,7 +334,7 @@ const Sidebar: React.FC = () => {
         })
         .filter((item): item is SidebarItem => item !== undefined); // Type-safe filter
     }
-  }, [sidebarItems, searchQuery, searchResults, expandedFolders]);
+  }, [sidebarItems, searchQuery, ftsSearchResults, expandedFolders]);
 
 
   const handleDelete = async (itemId: string) => {
@@ -534,10 +558,10 @@ const Sidebar: React.FC = () => {
     );
   };
 
-  // Find matching transcript snippet for a meeting item
+  // Find matching transcript snippet for a meeting item (uses FTS5)
   const findMatchingSnippet = (itemId: string) => {
-    if (!searchQuery.trim() || !searchResults.length) return null;
-    return searchResults.find(result => result.id === itemId);
+    if (!searchQuery.trim() || !ftsSearchResults.length) return null;
+    return ftsSearchResults.find(result => result.meeting_id === itemId);
   };
 
   const renderItem = (item: SidebarItem, depth = 0) => {
@@ -634,7 +658,7 @@ const Sidebar: React.FC = () => {
               {/* Show transcript match snippet if available */}
               {hasTranscriptMatch && (
                 <div className="mt-1 ml-8 text-xs text-gray-500 bg-yellow-50 p-1.5 rounded border border-yellow-100 line-clamp-2">
-                  <span className="font-medium text-yellow-600">Match:</span> {matchingResult.matchContext}
+                  <span className="font-medium text-yellow-600">Match:</span> {matchingResult?.snippet}
                 </div>
               )}
             </div>
@@ -669,7 +693,7 @@ const Sidebar: React.FC = () => {
           }`}
       >
         {/*  Header with traffic light spacing */}
-        <div className="flex-shrink-0 h-22 flex items-center">
+        <div className="flex-shrink-0 h-[88px] flex items-center">
 
           {/* Title container */}
 
@@ -689,18 +713,169 @@ const Sidebar: React.FC = () => {
                       onChange={(e) => handleSearchChange(e.target.value)}
                     />
                     <InputGroupAddon>
-                      <SearchIcon />
+                      <Popover open={showSearchFilters} onOpenChange={setShowSearchFilters}>
+                        <PopoverTrigger asChild>
+                          <button
+                            className={`p-1 rounded transition-colors ${activeFilterCount > 0 ? 'text-blue-600 bg-blue-50' : 'text-gray-500 hover:text-gray-700'}`}
+                            title="Search filters"
+                          >
+                            <Filter className="h-4 w-4" />
+                            {activeFilterCount > 0 && (
+                              <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+                                {activeFilterCount}
+                              </span>
+                            )}
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-64" align="end">
+                          <div className="space-y-4">
+                            <h4 className="font-medium text-sm">Search Filters</h4>
+
+                            {/* Date range */}
+                            <div className="space-y-2">
+                              <Label className="text-xs text-gray-500">Date Range</Label>
+                              <div className="grid grid-cols-2 gap-2">
+                                <Input
+                                  type="date"
+                                  placeholder="From"
+                                  value={searchFilters.date_from || ''}
+                                  onChange={(e) => setSearchFilters({ ...searchFilters, date_from: e.target.value || null })}
+                                  className="text-xs"
+                                />
+                                <Input
+                                  type="date"
+                                  placeholder="To"
+                                  value={searchFilters.date_to || ''}
+                                  onChange={(e) => setSearchFilters({ ...searchFilters, date_to: e.target.value || null })}
+                                  className="text-xs"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Min duration */}
+                            <div className="space-y-2">
+                              <Label className="text-xs text-gray-500">Min Duration (minutes)</Label>
+                              <Input
+                                type="number"
+                                placeholder="e.g. 5"
+                                value={searchFilters.min_duration || ''}
+                                onChange={(e) => setSearchFilters({ ...searchFilters, min_duration: e.target.value ? parseFloat(e.target.value) : null })}
+                                className="text-xs"
+                                min={0}
+                              />
+                            </div>
+
+                            {/* Has summary */}
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={searchFilters.has_summary === true}
+                                onChange={(e) => setSearchFilters({ ...searchFilters, has_summary: e.target.checked ? true : null })}
+                                className="rounded border-gray-300"
+                              />
+                              <Label className="text-xs">Has summary</Label>
+                            </div>
+
+                            {/* Clear filters */}
+                            {activeFilterCount > 0 && (
+                              <button
+                                onClick={() => {
+                                  clearSearchFilters();
+                                  setShowSearchFilters(false);
+                                  // Re-search with cleared filters if there's a query
+                                  if (searchQuery.trim()) {
+                                    searchMeetingsFts(searchQuery, {
+                                      date_from: null,
+                                      date_to: null,
+                                      min_duration: null,
+                                      has_summary: null,
+                                    });
+                                  }
+                                }}
+                                className="text-xs text-gray-500 hover:text-gray-700"
+                              >
+                                Clear all filters
+                              </button>
+                            )}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
                     </InputGroupAddon>
                     {searchQuery &&
                       <InputGroupAddon align={'inline-end'}>
                         <InputGroupButton
-                          onClick={() => handleSearchChange('')}
+                          onClick={() => {
+                            handleSearchChange('');
+                            clearSearchFilters();
+                          }}
                         >
                           <X />
                         </InputGroupButton>
                       </InputGroupAddon>
                     }
                   </InputGroup>
+
+                  {/* Active filter chips */}
+                  {activeFilterCount > 0 && (
+                    <div className="flex gap-1 mt-2 flex-wrap">
+                      {searchFilters.date_from && (
+                        <Badge variant="secondary" className="text-xs gap-1">
+                          From: {searchFilters.date_from}
+                          <X
+                            className="h-3 w-3 cursor-pointer"
+                            onClick={() => {
+                              setSearchFilters({ ...searchFilters, date_from: null });
+                              if (searchQuery.trim()) {
+                                searchMeetingsFts(searchQuery, { ...searchFilters, date_from: null });
+                              }
+                            }}
+                          />
+                        </Badge>
+                      )}
+                      {searchFilters.date_to && (
+                        <Badge variant="secondary" className="text-xs gap-1">
+                          To: {searchFilters.date_to}
+                          <X
+                            className="h-3 w-3 cursor-pointer"
+                            onClick={() => {
+                              setSearchFilters({ ...searchFilters, date_to: null });
+                              if (searchQuery.trim()) {
+                                searchMeetingsFts(searchQuery, { ...searchFilters, date_to: null });
+                              }
+                            }}
+                          />
+                        </Badge>
+                      )}
+                      {searchFilters.min_duration && (
+                        <Badge variant="secondary" className="text-xs gap-1">
+                          {searchFilters.min_duration}+ min
+                          <X
+                            className="h-3 w-3 cursor-pointer"
+                            onClick={() => {
+                              setSearchFilters({ ...searchFilters, min_duration: null });
+                              if (searchQuery.trim()) {
+                                searchMeetingsFts(searchQuery, { ...searchFilters, min_duration: null });
+                              }
+                            }}
+                          />
+                        </Badge>
+                      )}
+                      {searchFilters.has_summary === true && (
+                        <Badge variant="secondary" className="text-xs gap-1">
+                          Has summary
+                          <X
+                            className="h-3 w-3 cursor-pointer"
+                            onClick={() => {
+                              setSearchFilters({ ...searchFilters, has_summary: null });
+                              if (searchQuery.trim()) {
+                                searchMeetingsFts(searchQuery, { ...searchFilters, has_summary: null });
+                              }
+                            }}
+                          />
+                        </Badge>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -790,6 +965,15 @@ const Sidebar: React.FC = () => {
                 <span>Import Audio</span>
               </button>
             )}
+
+            {/* Action Items button */}
+            <button
+              onClick={() => router.push('/action-items')}
+              className="w-full flex items-center justify-center px-3 py-1.5 mt-1 text-sm font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors"
+            >
+              <ClipboardList className="w-4 h-4 mr-2" />
+              <span>Action Items</span>
+            </button>
 
             {/* Model status badge - show when models are not ready */}
             {(!isParakeetReady || !isSummaryReady) && (

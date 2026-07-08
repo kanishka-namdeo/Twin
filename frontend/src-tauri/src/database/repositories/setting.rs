@@ -24,8 +24,8 @@ pub struct SaveTranscriptConfigRequest {
 
 pub struct SettingsRepository;
 
-// Transcript providers: localWhisper, deepgram, elevenLabs, groq, openai
-// Summary providers: openai, claude, ollama, groq, added openrouter
+// Transcript providers: localWhisper, deepgram, elevenLabs, openai
+// Summary providers: openai, claude, ollama, custom-openai
 // NOTE: Handle data exclusion in the higher layer as this is database abstraction layer(using SELECT *)
 
 impl SettingsRepository {
@@ -83,9 +83,8 @@ impl SettingsRepository {
             "openai" => "openaiApiKey",
             "claude" => "anthropicApiKey",
             "ollama" => "ollamaApiKey",
-            "groq" => "groqApiKey",
-            "openrouter" => "openRouterApiKey",
             "builtin-ai" => return Ok(()), // No API key needed
+            "local-llm" => return Ok(()), // LocalLLM uses in-process inference, no API key
             _ => {
                 return Err(sqlx::Error::Protocol(
                     format!("Invalid provider: {}", provider).into(),
@@ -120,10 +119,9 @@ impl SettingsRepository {
         let api_key_column = match provider {
             "openai" => "openaiApiKey",
             "ollama" => "ollamaApiKey",
-            "groq" => "groqApiKey",
             "claude" => "anthropicApiKey",
-            "openrouter" => "openRouterApiKey",
             "builtin-ai" => return Ok(None), // No API key needed
+            "local-llm" => return Ok(None), // LocalLLM uses in-process inference, no API key
             _ => {
                 return Err(sqlx::Error::Protocol(
                     format!("Invalid provider: {}", provider).into(),
@@ -182,7 +180,6 @@ impl SettingsRepository {
             "parakeet" => return Ok(()), // Parakeet doesn't need an API key, return early
             "deepgram" => "deepgramApiKey",
             "elevenLabs" => "elevenLabsApiKey",
-            "groq" => "groqApiKey",
             "openai" => "openaiApiKey",
             _ => {
                 return Err(sqlx::Error::Protocol(
@@ -214,7 +211,6 @@ impl SettingsRepository {
             "parakeet" => return Ok(None), // Parakeet doesn't need an API key
             "deepgram" => "deepgramApiKey",
             "elevenLabs" => "elevenLabsApiKey",
-            "groq" => "groqApiKey",
             "openai" => "openaiApiKey",
             _ => {
                 return Err(sqlx::Error::Protocol(
@@ -246,10 +242,9 @@ impl SettingsRepository {
         let api_key_column = match provider {
             "openai" => "openaiApiKey",
             "ollama" => "ollamaApiKey",
-            "groq" => "groqApiKey",
             "claude" => "anthropicApiKey",
-            "openrouter" => "openRouterApiKey",
             "builtin-ai" => return Ok(()), // No API key needed
+            "local-llm" => return Ok(()), // LocalLLM uses in-process inference, no API key
             _ => {
                 return Err(sqlx::Error::Protocol(
                     format!("Invalid provider: {}", provider).into(),

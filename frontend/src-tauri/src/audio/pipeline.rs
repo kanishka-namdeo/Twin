@@ -10,7 +10,7 @@ use rubato::{Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolat
 
 use super::devices::AudioDevice;
 use super::recording_state::{AudioChunk, AudioError, RecordingState, DeviceType};
-use super::audio_processing::{audio_to_mono, LoudnessNormalizer, NoiseSuppressionProcessor, HighPassFilter};
+use super::audio_processing::{audio_to_mono, NoiseSuppressionProcessor, HighPassFilter};
 use super::vad::{ContinuousVadProcessor};
 
 /// Ring buffer for synchronized audio mixing
@@ -141,36 +141,27 @@ impl AudioMixerRingBuffer {
 
 }
 
-/// Simple audio mixer without aggressive ducking
-/// Combines mic + system audio with basic clipping prevention
-struct ProfessionalAudioMixer;
+/// Simple audio mixer for combining mic and system audio
+/// Uses proportional scaling to prevent clipping distortion
+struct SimpleAudioMixer;
 
-impl ProfessionalAudioMixer {
+impl SimpleAudioMixer {
     fn new(_sample_rate: u32) -> Self {
         Self
     }
 
     fn mix_window(&mut self, mic_window: &[f32], sys_window: &[f32]) -> Vec<f32> {
-        // Handle different lengths (already padded by extract_window, but defensive)
         let max_len = mic_window.len().max(sys_window.len());
         let mut mixed = Vec::with_capacity(max_len);
 
-        // Professional mixing with soft scaling to prevent distortion
-        // Uses proportional scaling instead of hard clamping to avoid artifacts
         for i in 0..max_len {
             let mic = mic_window.get(i).copied().unwrap_or(0.0);
             let sys = sys_window.get(i).copied().unwrap_or(0.0);
-
-            // Sum without ducking - mic stays at full volume, system at full volume
-            // Pre-scaling removed: was dead computation (sys * 1.0 = sys)
             let sum = mic + sys;
 
-            // CRITICAL FIX: Soft scaling prevents distortion artifacts
-            // If the sum would exceed ±1.0, scale down PROPORTIONALLY
-            // This avoids hard clipping distortion that sounds like "radio breaks"
+            // Soft scaling to prevent clipping distortion
             let sum_abs = sum.abs();
             let mixed_sample = if sum_abs > 1.0 {
-                // Scale down to fit within ±1.0
                 sum / sum_abs
             } else {
                 sum
@@ -202,8 +193,6 @@ pub struct AudioCapture {
     // Audio enhancement processors (microphone only)
     noise_suppressor: Arc<std::sync::Mutex<Option<NoiseSuppressionProcessor>>>,
     high_pass_filter: Arc<std::sync::Mutex<Option<HighPassFilter>>>,
-    // EBU R128 normalizer for microphone audio (per-device, stateful)
-    normalizer: Arc<std::sync::Mutex<Option<LoudnessNormalizer>>>,
     // Note: Using global recording timestamp for synchronization
 }
 
@@ -261,9 +250,9 @@ impl AudioCapture {
 
         // Initialize audio enhancement processors for MICROPHONE ONLY
         // System audio doesn't need enhancement (already clean)
-        let (noise_suppressor, high_pass_filter, normalizer) = if matches!(device_type, DeviceType::Microphone) {
+        let (noise_suppressor, high_pass_filter) = if matches!(device_type, DeviceType::Microphone) {
             // Initialize noise suppression (RNNoise) at 48kHz - CONDITIONAL based on flag
-            let ns = if super::ffmpeg_mixer::RNNOISE_APPLY_ENABLED {
+            let ns = if super::RNNOISE_APPLY_ENABLED {
                 match NoiseSuppressionProcessor::new(TARGET_SAMPLE_RATE) {
                     Ok(processor) => {
                         info!("✅ RNNoise noise suppression ENABLED for microphone '{}' (10-15 dB reduction)", device.name);
@@ -275,8 +264,7 @@ impl AudioCapture {
                     }
                 }
             } else {
-                info!("ℹ️ RNNoise noise suppression DISABLED for microphone '{}' (flag: RNNOISE_APPLY_ENABLED=false)", device.name);
-                info!("   Whisper handles noise well internally - RNNoise is optional");
+                info!("ℹ️ RNNoise noise suppression DISABLED for microphone '{}'", device.name);
                 None
             };
 
@@ -287,23 +275,11 @@ impl AudioCapture {
                 Some(filter)
             };
 
-            // Initialize EBU R128 normalizer (professional loudness standard)
-            let norm = match LoudnessNormalizer::new(1, TARGET_SAMPLE_RATE) {
-                Ok(normalizer) => {
-                    info!("✅ EBU R128 normalizer initialized for microphone '{}' (target: -23 LUFS)", device.name);
-                    Some(normalizer)
-                }
-                Err(e) => {
-                    warn!("⚠️ Failed to create normalizer for microphone: {}, normalization disabled", e);
-                    None
-                }
-            };
-
-            (ns, hpf, norm)
+            (ns, hpf)
         } else {
             // System audio: no enhancement needed
             info!("ℹ️ System audio '{}' captured raw (no enhancement)", device.name);
-            (None, None, None)
+            (None, None)
         };
 
         // CRITICAL FIX: Initialize persistent resampler to preserve energy across chunks
@@ -371,7 +347,6 @@ impl AudioCapture {
             resampler_chunk_size: RESAMPLER_CHUNK_SIZE,
             noise_suppressor: Arc::new(std::sync::Mutex::new(noise_suppressor)),
             high_pass_filter: Arc::new(std::sync::Mutex::new(high_pass_filter)),
-            normalizer: Arc::new(std::sync::Mutex::new(normalizer)),
             // Using global recording time for sync
         }
     }
@@ -514,7 +489,7 @@ impl AudioCapture {
             }
 
             // STEP 2: Apply RNNoise noise suppression (10-15 dB reduction) - CONDITIONAL
-            if super::ffmpeg_mixer::RNNOISE_APPLY_ENABLED {
+            if super::RNNOISE_APPLY_ENABLED {
                 if let Ok(mut ns_lock) = self.noise_suppressor.lock() {
                     if let Some(ref mut suppressor) = *ns_lock {
                         let before_len = mono_data.len();
@@ -545,21 +520,6 @@ impl AudioCapture {
                                       before_len, after_len, length_delta);
                             }
                         }
-                    }
-                }
-            }
-
-            // STEP 3: Apply EBU R128 normalization (professional loudness standard)
-            if let Ok(mut normalizer_lock) = self.normalizer.lock() {
-                if let Some(ref mut normalizer) = *normalizer_lock {
-                    mono_data = normalizer.normalize_loudness(&mono_data);
-
-                    // Log normalization occasionally for debugging
-                    let chunk_id = self.chunk_counter.load(std::sync::atomic::Ordering::SeqCst);
-                    if chunk_id % 200 == 0 && !mono_data.is_empty() {
-                        let rms = (mono_data.iter().map(|&x| x * x).sum::<f32>() / mono_data.len() as f32).sqrt();
-                        let peak = mono_data.iter().map(|&x| x.abs()).fold(0.0f32, f32::max);
-                        debug!("🎤 After normalization chunk {}: RMS={:.4}, Peak={:.4}", chunk_id, rms, peak);
                     }
                 }
             }
@@ -683,9 +643,9 @@ pub struct AudioPipeline {
     processed_chunks: u64,
     // Smart batching for audio metrics
     metrics_batcher: Option<AudioMetricsBatcher>,
-    // PROFESSIONAL AUDIO MIXING: Ring buffer + RMS-based mixer
+    // AUDIO MIXING: Ring buffer + simple mixer
     ring_buffer: AudioMixerRingBuffer,
-    mixer: ProfessionalAudioMixer,
+    mixer: SimpleAudioMixer,
     // Recording sender for pre-mixed audio
     recording_sender_for_mixed: Option<mpsc::UnboundedSender<AudioChunk>>,
 }
@@ -727,9 +687,9 @@ impl AudioPipeline {
             })?;
         info!("VAD-driven pipeline: VAD segments will be sent directly to Whisper (no time-based accumulation)");
 
-        // Initialize professional audio mixing components
+        // Initialize audio mixing components
         let ring_buffer = AudioMixerRingBuffer::new(sample_rate);
-        let mixer = ProfessionalAudioMixer::new(sample_rate);
+        let mixer = SimpleAudioMixer::new(sample_rate);
 
         // Note: target_chunk_duration_ms is ignored - VAD controls segmentation now
         let _ = target_chunk_duration_ms;
@@ -746,7 +706,7 @@ impl AudioPipeline {
             processed_chunks: 0,
             // Initialize metrics batcher for smart batching
             metrics_batcher: Some(AudioMetricsBatcher::new()),
-            // Initialize professional audio mixing
+            // Initialize audio mixing
             ring_buffer,
             mixer,
             recording_sender_for_mixed: None,  // Will be set by manager
@@ -821,13 +781,8 @@ impl AudioPipeline {
                     // STEP 2: Mix audio in fixed windows when both streams have sufficient data
                     while self.ring_buffer.can_mix() {
                         if let Some((mic_window, sys_window)) = self.ring_buffer.extract_window() {
-                            // Simple mixing without aggressive ducking
+                            // Simple mixing with soft scaling to prevent clipping
                             let mixed_clean = self.mixer.mix_window(&mic_window, &sys_window);
-
-                            // NO POST-GAIN NEEDED: Microphone already normalized by EBU R128 to -23 LUFS
-                            // This is broadcast-standard loudness (Netflix/YouTube/Spotify level)
-                            // System audio at natural levels
-                            // Previous 2x gain was causing excessive limiting/distortion
                             let mixed_with_gain = mixed_clean;
 
                             // STEP 3: Send mixed audio for transcription (VAD + Whisper)

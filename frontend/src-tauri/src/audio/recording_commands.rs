@@ -280,6 +280,7 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
                     display_time: update.timestamp.clone(), // Use wall-clock timestamp for display
                     confidence: update.confidence,
                     sequence_id: update.sequence_id,
+                    speaker_id: update.speaker_id,
                 };
 
                 // Save to recording manager
@@ -357,13 +358,24 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
     }
     info!("✅ Transcription model validation passed");
 
-    // Parse devices
+    // Parse devices with fallback to defaults when not specified
+    // This ensures recording can start even when frontend passes null devices
     let mic_device = if let Some(ref name) = mic_device_name {
         Some(Arc::new(parse_audio_device(name).map_err(|e| {
             format!("Invalid microphone device '{}': {}", name, e)
         })?))
     } else {
-        None
+        info!("🎤 No microphone device specified, attempting to use system default");
+        match default_input_device() {
+            Ok(device) => {
+                info!("✅ Using default microphone: '{}'", device.name);
+                Some(Arc::new(device))
+            }
+            Err(e) => {
+                error!("❌ No default microphone available: {}", e);
+                None
+            }
+        }
     };
 
     let system_device = if let Some(ref name) = system_device_name {
@@ -371,8 +383,24 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
             format!("Invalid system device '{}': {}", name, e)
         })?))
     } else {
-        None
+        info!("🔊 No system device specified, attempting to use system default");
+        match default_output_device() {
+            Ok(device) => {
+                info!("✅ Using default system audio: '{}'", device.name);
+                Some(Arc::new(device))
+            }
+            Err(e) => {
+                warn!("⚠️ No default system audio available: {}", e);
+                warn!("   Recording will continue with microphone only");
+                None
+            }
+        }
     };
+
+    // Ensure at least a microphone is available - recording cannot proceed without it
+    if mic_device.is_none() {
+        return Err("No microphone device available. Please check that:\n• Your microphone is connected\n• The app has microphone permissions\n• No other app is using the microphone".to_string());
+    }
 
     // Async-first approach for custom devices - no more blocking operations!
     info!("🚀 Starting async recording initialization with custom devices");
@@ -456,6 +484,7 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
                     display_time: update.timestamp.clone(), // Use wall-clock timestamp for display
                     confidence: update.confidence,
                     sequence_id: update.sequence_id,
+                    speaker_id: update.speaker_id,
                 };
 
                 // Save to recording manager

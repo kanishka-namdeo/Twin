@@ -161,7 +161,8 @@ impl HardwareProfile {
         // Check for CUDA environment or libraries
         std::env::var("CUDA_PATH").is_ok() ||
         std::env::var("CUDA_HOME").is_ok() ||
-        std::path::Path::new("/usr/local/cuda").exists()
+        std::path::Path::new("/usr/local/cuda").exists() ||
+        which::which("nvidia-smi").is_ok()
     }
 
     fn has_vulkan_support() -> bool {

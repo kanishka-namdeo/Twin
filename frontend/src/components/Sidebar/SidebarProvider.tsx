@@ -18,12 +18,28 @@ export interface CurrentMeeting {
   title: string;
 }
 
-// Search result type for transcript search
+// Search result type for transcript search (legacy)
 interface TranscriptSearchResult {
   id: string;
   title: string;
   matchContext: string;
   timestamp: string;
+};
+
+// FTS5 search result type
+interface FtsSearchResult {
+  meeting_id: string;
+  meeting_title: string;
+  snippet: string;
+  rank: number;
+};
+
+// Search filter type
+interface SearchFilters {
+  date_from: string | null;
+  date_to: string | null;
+  min_duration: number | null;
+  has_summary: boolean | null;
 };
 
 interface SidebarContextType {
@@ -37,9 +53,16 @@ interface SidebarContextType {
   isMeetingActive: boolean;
   setIsMeetingActive: (active: boolean) => void;
   handleRecordingToggle: () => void;
+  // Legacy transcript search (deprecated, use searchMeetingsFts)
   searchTranscripts: (query: string) => Promise<void>;
   searchResults: TranscriptSearchResult[];
   isSearching: boolean;
+  // FTS5 search with filters
+  searchMeetingsFts: (query: string, filters?: SearchFilters) => Promise<void>;
+  ftsSearchResults: FtsSearchResult[];
+  searchFilters: SearchFilters;
+  setSearchFilters: (filters: SearchFilters) => void;
+  clearSearchFilters: () => void;
   setServerAddress: (address: string) => void;
   serverAddress: string;
   transcriptServerAddress: string;
@@ -74,6 +97,14 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const [serverAddress, setServerAddress] = useState('');
   const [transcriptServerAddress, setTranscriptServerAddress] = useState('');
   const [activeSummaryPolls, setActiveSummaryPolls] = useState<Map<string, NodeJS.Timeout>>(new Map());
+  // FTS5 search state
+  const [ftsSearchResults, setFtsSearchResults] = useState<FtsSearchResult[]>([]);
+  const [searchFilters, setSearchFilters] = useState<SearchFilters>({
+    date_from: null,
+    date_to: null,
+    min_duration: null,
+    has_summary: null,
+  });
 
   // Use recording state from RecordingStateContext (single source of truth)
   const { isRecording } = useRecordingState();
@@ -177,6 +208,44 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsSearching(false);
     }
+  };
+
+  // Function to search using FTS5 with filters
+  const searchMeetingsFts = async (query: string, filters?: SearchFilters) => {
+    if (!query.trim()) {
+      setFtsSearchResults([]);
+      return;
+    }
+
+    try {
+      setIsSearching(true);
+
+      const activeFilters = filters || searchFilters;
+      const results = await invoke<FtsSearchResult[]>('api_search_meetings_fts', {
+        query,
+        date_from: activeFilters.date_from || null,
+        date_to: activeFilters.date_to || null,
+        min_duration: activeFilters.min_duration || null,
+        has_summary: activeFilters.has_summary !== null ? activeFilters.has_summary : null,
+      });
+
+      setFtsSearchResults(results);
+    } catch (error) {
+      console.error('Error in FTS5 search:', error);
+      setFtsSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Clear search filters
+  const clearSearchFilters = () => {
+    setSearchFilters({
+      date_from: null,
+      date_to: null,
+      min_duration: null,
+      has_summary: null,
+    });
   };
 
   // Summary polling management
@@ -299,6 +368,12 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
       searchTranscripts,
       searchResults,
       isSearching,
+      // FTS5 search
+      searchMeetingsFts,
+      ftsSearchResults,
+      searchFilters,
+      setSearchFilters,
+      clearSearchFilters,
       setServerAddress,
       serverAddress,
       transcriptServerAddress,

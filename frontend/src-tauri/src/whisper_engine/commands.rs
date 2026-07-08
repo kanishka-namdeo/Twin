@@ -518,6 +518,12 @@ pub async fn whisper_delete_corrupted_model(model_name: String) -> Result<String
     }
 }
 
+/// Get comprehensive acceleration information for diagnostics
+#[command]
+pub async fn whisper_get_acceleration_info() -> Result<crate::whisper_engine::AccelerationInfo, String> {
+    Ok(crate::whisper_engine::acceleration::get_acceleration_info())
+}
+
 /// Open the models folder in the system file explorer
 #[command]
 pub async fn open_models_folder() -> Result<(), String> {

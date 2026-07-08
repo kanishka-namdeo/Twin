@@ -56,6 +56,8 @@ export default function PageContent({
   const [customPrompt, setCustomPrompt] = useState<string>('');
   const [isRecording] = useState(false);
   const [summaryResponse] = useState<SummaryResponse | null>(null);
+  const [audioCurrentTime, setAudioCurrentTime] = useState<number>(0);
+  const [highlightSegmentId, setHighlightSegmentId] = useState<string | null>(null);
 
   // Ref to store the modal open function from SummaryGeneratorButtonGroup
   const openModelSettingsRef = useRef<(() => void) | null>(null);
@@ -133,6 +135,41 @@ export default function PageContent({
     meeting,
   });
 
+  // Audio playback synchronization handlers
+  const handleAudioTimeUpdate = (currentTime: number) => {
+    setAudioCurrentTime(currentTime);
+    
+    // Find the segment that corresponds to the current audio time
+    if (segments && segments.length > 0) {
+      const currentSegment = segments.find(
+        (segment) =>
+          currentTime >= segment.audio_start_time &&
+          currentTime < segment.audio_end_time
+      );
+      
+      if (currentSegment) {
+        setHighlightSegmentId(currentSegment.id);
+      }
+    }
+  };
+
+  const handleAudioSeek = (time: number) => {
+    setAudioCurrentTime(time);
+    
+    // Find the segment that corresponds to the seek time
+    if (segments && segments.length > 0) {
+      const currentSegment = segments.find(
+        (segment) =>
+          time >= segment.audio_start_time &&
+          time < segment.audio_end_time
+      );
+      
+      if (currentSegment) {
+        setHighlightSegmentId(currentSegment.id);
+      }
+    }
+  };
+
   // Auto-generate summary when flag is set
   useEffect(() => {
     let cancelled = false;
@@ -162,9 +199,9 @@ export default function PageContent({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: 'easeOut' }}
-      className="flex flex-col h-screen bg-gray-50"
+      className="flex flex-col h-screen bg-gray-50 w-full overflow-hidden"
     >
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden w-full">
         <TranscriptPanel
           transcripts={meetingData.transcripts}
           customPrompt={customPrompt}
@@ -185,6 +222,11 @@ export default function PageContent({
           meetingId={meeting.id}
           meetingFolderPath={meeting.folder_path}
           onRefetchTranscripts={onRefetchTranscripts}
+          // Audio playback props
+          showAudioPlayer={true}
+          onAudioTimeUpdate={handleAudioTimeUpdate}
+          onAudioSeek={handleAudioSeek}
+          highlightSegmentId={highlightSegmentId}
         />
         <SummaryPanel
           meeting={meeting}

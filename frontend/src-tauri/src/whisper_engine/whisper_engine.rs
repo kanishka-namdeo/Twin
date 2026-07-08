@@ -152,6 +152,22 @@ impl WhisperEngine {
 
         #[cfg(feature = "openmp")]
         log::info!("OpenMP parallel processing: enabled");
+
+        // Comprehensive acceleration diagnostic
+        let accel_info = super::acceleration::get_acceleration_info();
+        log::info!("=== ACCELERATION DIAGNOSTIC ===");
+        log::info!("{}", accel_info.diagnostic_summary);
+        log::info!("Compiled backend: {} | Runtime GPU: {} | use_gpu: {} | flash_attn: {} | tier: {}",
+            accel_info.compiled_backend,
+            accel_info.runtime_detected_gpu,
+            accel_info.use_gpu,
+            accel_info.flash_attention_enabled,
+            accel_info.performance_tier,
+        );
+        if !accel_info.use_gpu {
+            log::warn!("GPU acceleration is DISABLED. To enable CUDA, run with `pnpm run tauri:dev:cuda`.");
+        }
+        log::info!("===============================");
         
         let engine = Self {
             models_dir,

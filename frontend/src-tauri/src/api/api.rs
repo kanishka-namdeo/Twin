@@ -49,7 +49,6 @@ pub struct TranscriptSearchResult {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProfileRequest {
     pub email: String,
-    pub license_key: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -61,7 +60,6 @@ pub struct SaveProfileRequest {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateProfileRequest {
     pub email: String,
-    pub license_key: String,
     pub company: String,
     pub position: String,
 }
@@ -188,6 +186,9 @@ pub struct TranscriptSegment {
     pub audio_end_time: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration: Option<f64>,
+    // Speaker diarization: which speaker said this
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speaker_id: Option<i32>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -195,12 +196,10 @@ pub struct Profile {
     pub id: String,
     pub name: Option<String>,
     pub email: String,
-    pub license_key: String,
     pub company: Option<String>,
     pub position: Option<String>,
     pub created_at: String,
     pub updated_at: String,
-    pub is_licensed: bool,
 }
 
 // Helper function to get auth token from store (optional)
@@ -386,7 +385,6 @@ pub async fn api_search_transcripts<R: Runtime>(
 pub async fn api_get_profile<R: Runtime>(
     app: AppHandle<R>,
     email: String,
-    license_key: String,
     auth_token: Option<String>,
 ) -> Result<Profile, String> {
     log_info!(
@@ -395,7 +393,7 @@ pub async fn api_get_profile<R: Runtime>(
         auth_token.is_some()
     );
 
-    let profile_request = ProfileRequest { email, license_key };
+    let profile_request = ProfileRequest { email };
     let body = serde_json::to_string(&profile_request).map_err(|e| e.to_string())?;
 
     make_api_request::<R, Profile>(&app, "/get-profile", "POST", Some(&body), None, auth_token)
@@ -433,7 +431,6 @@ pub async fn api_save_profile<R: Runtime>(
 pub async fn api_update_profile<R: Runtime>(
     app: AppHandle<R>,
     email: String,
-    license_key: String,
     company: String,
     position: String,
     auth_token: Option<String>,
@@ -446,7 +443,6 @@ pub async fn api_update_profile<R: Runtime>(
 
     let update_request = UpdateProfileRequest {
         email,
-        license_key,
         company,
         position,
     };
@@ -1373,4 +1369,387 @@ pub async fn api_test_custom_openai_connection<R: Runtime>(
             }
         }
     }
+}
+
+// ===== ACTION ITEMS API COMMANDS =====
+
+use crate::database::repositories::action_item::ActionItemsRepository;
+use crate::database::repositories::fts_search::FtsSearchRepository;
+use crate::database::models::FtsSearchResult;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ActionItemResponse {
+    pub id: String,
+    pub meeting_id: String,
+    pub meeting_title: String,
+    pub text: String,
+    pub completed: bool,
+    pub created_at: String,
+}
+
+#[tauri::command]
+pub async fn api_get_all_action_items<R: Runtime>(
+    _app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<ActionItemResponse>, String> {
+    log_info!("api_get_all_action_items called");
+    let pool = state.db_manager.pool();
+
+    let action_items = ActionItemsRepository::get_all_action_items(pool)
+        .await
+        .map_err(|e| format!("Failed to get action items: {}", e))?;
+
+    let mut results = Vec::new();
+    for item in action_items {
+        let meeting_title = sqlx::query_scalar::<_, String>(
+            "SELECT title FROM meetings WHERE id = ?"
+        )
+        .bind(&item.meeting_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("Failed to get meeting title: {}", e))?
+        .unwrap_or_else(|| "Unknown Meeting".to_string());
+
+        results.push(ActionItemResponse {
+            id: item.id,
+            meeting_id: item.meeting_id,
+            meeting_title,
+            text: item.text,
+            completed: item.completed,
+            created_at: item.created_at.0.to_rfc3339(),
+        });
+    }
+
+    Ok(results)
+}
+
+#[tauri::command]
+pub async fn api_update_action_item<R: Runtime>(
+    _app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+    action_item_id: String,
+    completed: bool,
+) -> Result<serde_json::Value, String> {
+    log_info!("api_update_action_item called: id={}, completed={}", action_item_id, completed);
+    let pool = state.db_manager.pool();
+
+    ActionItemsRepository::update_action_item_completed(pool, &action_item_id, completed)
+        .await
+        .map_err(|e| format!("Failed to update action item: {}", e))?;
+
+    Ok(serde_json::json!({
+        "status": "success",
+        "message": "Action item updated successfully"
+    }))
+}
+
+// ===== FTS5 SEARCH API COMMANDS =====
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FtsSearchRequest {
+    pub query: String,
+    pub date_from: Option<String>,
+    pub date_to: Option<String>,
+    pub min_duration: Option<f64>,
+    pub has_summary: Option<bool>,
+}
+
+#[tauri::command]
+pub async fn api_search_meetings_fts<R: Runtime>(
+    _app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+    query: String,
+    date_from: Option<String>,
+    date_to: Option<String>,
+    min_duration: Option<f64>,
+    has_summary: Option<bool>,
+) -> Result<Vec<FtsSearchResult>, String> {
+    log_info!("api_search_meetings_fts called: query='{}'", query);
+    let pool = state.db_manager.pool();
+
+    FtsSearchRepository::search_meetings_fts(pool, &query, date_from, date_to, min_duration, has_summary)
+        .await
+        .map_err(|e| format!("FTS search failed: {}", e))
+}
+
+// ===== EXPORT API COMMANDS =====
+
+#[tauri::command]
+pub async fn api_export_meeting_transcript<R: Runtime>(
+    _app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+    meeting_id: String,
+    format: String,
+    output_path: String,
+) -> Result<serde_json::Value, String> {
+    log_info!("api_export_meeting_transcript called: meeting={}, format={}, path={}", meeting_id, format, output_path);
+    let pool = state.db_manager.pool();
+
+    let transcripts = sqlx::query_as::<_, crate::database::models::Transcript>(
+        "SELECT * FROM transcripts WHERE meeting_id = ? ORDER BY audio_start_time ASC"
+    )
+    .bind(&meeting_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("Failed to get transcripts: {}", e))?;
+
+    let content = match format.as_str() {
+        "srt" => format_as_srt(&transcripts),
+        "vtt" => format_as_vtt(&transcripts),
+        "txt" => format_as_txt(&transcripts),
+        _ => return Err(format!("Unsupported format: {}", format)),
+    };
+
+    std::fs::write(&output_path, content)
+        .map_err(|e| format!("Failed to write file: {}", e))?;
+
+    Ok(serde_json::json!({
+        "status": "success",
+        "message": format!("Exported {} transcripts to {}", transcripts.len(), format)
+    }))
+}
+
+fn format_as_srt(transcripts: &[crate::database::models::Transcript]) -> String {
+    let mut output = String::new();
+    for (i, t) in transcripts.iter().enumerate() {
+        let start = format_timestamp_srt(t.audio_start_time.unwrap_or(0.0));
+        let end = format_timestamp_srt(t.audio_end_time.unwrap_or(0.0));
+        output.push_str(&format!("{}\n{} --> {}\n{}\n\n", i + 1, start, end, t.transcript));
+    }
+    output
+}
+
+fn format_as_vtt(transcripts: &[crate::database::models::Transcript]) -> String {
+    let mut output = String::from("WEBVTT\n\n");
+    for t in transcripts {
+        let start = format_timestamp_vtt(t.audio_start_time.unwrap_or(0.0));
+        let end = format_timestamp_vtt(t.audio_end_time.unwrap_or(0.0));
+        output.push_str(&format!("{} --> {}\n{}\n\n", start, end, t.transcript));
+    }
+    output
+}
+
+fn format_as_txt(transcripts: &[crate::database::models::Transcript]) -> String {
+    transcripts.iter()
+        .map(|t| format!("[{}] {}", t.timestamp, t.transcript))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn format_timestamp_srt(seconds: f64) -> String {
+    let h = (seconds / 3600.0) as u32;
+    let m = ((seconds % 3600.0) / 60.0) as u32;
+    let s = (seconds % 60.0) as u32;
+    let ms = ((seconds % 1.0) * 1000.0) as u32;
+    format!("{:02}:{:02}:{:02},{:03}", h, m, s, ms)
+}
+
+fn format_timestamp_vtt(seconds: f64) -> String {
+    let h = (seconds / 3600.0) as u32;
+    let m = ((seconds % 3600.0) / 60.0) as u32;
+    let s = (seconds % 60.0) as u32;
+    let ms = ((seconds % 1.0) * 1000.0) as u32;
+    format!("{:02}:{:02}:{:02}.{:03}", h, m, s, ms)
+}
+
+#[tauri::command]
+pub async fn api_export_meeting_bundle<R: Runtime>(
+    _app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+    meeting_id: String,
+    output_path: String,
+) -> Result<serde_json::Value, String> {
+    log_info!("api_export_meeting_bundle called: meeting={}, path={}", meeting_id, output_path);
+    let pool = state.db_manager.pool();
+
+    let meeting: Option<MeetingModel> = sqlx::query_as("SELECT * FROM meetings WHERE id = ?")
+        .bind(&meeting_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| format!("Failed to get meeting: {}", e))?;
+
+    let meeting = meeting.ok_or("Meeting not found")?;
+    let transcripts = sqlx::query_as::<_, crate::database::models::Transcript>(
+        "SELECT * FROM transcripts WHERE meeting_id = ? ORDER BY audio_start_time ASC"
+    )
+    .bind(&meeting_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("Failed to get transcripts: {}", e))?;
+
+    let mut bundle = format!("# Meeting: {}\n\n", meeting.title);
+    bundle.push_str(&format!("Date: {}\n\n", meeting.created_at.0.format("%Y-%m-%d %H:%M")));
+    bundle.push_str("## Transcript\n\n");
+    for t in &transcripts {
+        bundle.push_str(&format!("[{}] {}\n\n", t.timestamp, t.transcript));
+    }
+
+    std::fs::write(&output_path, bundle)
+        .map_err(|e| format!("Failed to write bundle: {}", e))?;
+
+    Ok(serde_json::json!({
+        "status": "success",
+        "message": "Bundle exported successfully"
+    }))
+}
+
+// ===== MEETING CONTEXT API COMMANDS =====
+
+#[tauri::command]
+pub async fn api_save_meeting_context<R: Runtime>(
+    _app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+    meeting_id: String,
+    context: String,
+) -> Result<serde_json::Value, String> {
+    log_info!("api_save_meeting_context called: meeting={}", meeting_id);
+    let pool = state.db_manager.pool();
+
+    sqlx::query("UPDATE meetings SET meeting_context = ? WHERE id = ?")
+        .bind(&context)
+        .bind(&meeting_id)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("Failed to save meeting context: {}", e))?;
+
+    Ok(serde_json::json!({
+        "status": "success",
+        "message": "Meeting context saved successfully"
+    }))
+}
+
+#[tauri::command]
+pub async fn api_get_meeting_context<R: Runtime>(
+    _app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+    meeting_id: String,
+) -> Result<Option<String>, String> {
+    log_info!("api_get_meeting_context called: meeting={}", meeting_id);
+    let pool = state.db_manager.pool();
+
+    let context: Option<String> = sqlx::query_scalar(
+        "SELECT meeting_context FROM meetings WHERE id = ?"
+    )
+    .bind(&meeting_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| format!("Failed to get meeting context: {}", e))?;
+
+    Ok(context)
+}
+
+// ===== MEETING NOTES API COMMANDS =====
+
+use crate::database::repositories::meeting_notes::MeetingNotesRepository;
+
+#[tauri::command]
+pub async fn api_get_meeting_notes<R: Runtime>(
+    _app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+    meeting_id: String,
+) -> Result<Option<crate::database::repositories::meeting_notes::MeetingNote>, String> {
+    log_info!("api_get_meeting_notes called: meeting={}", meeting_id);
+    let pool = state.db_manager.pool();
+
+    MeetingNotesRepository::get_meeting_notes(pool, &meeting_id)
+        .await
+        .map_err(|e| format!("Failed to get meeting notes: {}", e))
+}
+
+#[tauri::command]
+pub async fn api_save_meeting_notes<R: Runtime>(
+    _app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+    meeting_id: String,
+    notes_markdown: String,
+    notes_json: String,
+) -> Result<serde_json::Value, String> {
+    log_info!("api_save_meeting_notes called: meeting={}", meeting_id);
+    let pool = state.db_manager.pool();
+
+    MeetingNotesRepository::save_meeting_notes(
+        pool,
+        &meeting_id,
+        Some(&notes_markdown),
+        Some(&notes_json),
+    )
+    .await
+    .map_err(|e| format!("Failed to save meeting notes: {}", e))?;
+
+    Ok(serde_json::json!({
+        "status": "success",
+        "message": "Meeting notes saved successfully"
+    }))
+}
+
+#[tauri::command]
+pub async fn api_get_meetings_with_notes<R: Runtime>(
+    _app: AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<crate::database::repositories::meeting_notes::MeetingNoteWithDetails>, String> {
+    log_info!("api_get_meetings_with_notes called");
+    let pool = state.db_manager.pool();
+
+    MeetingNotesRepository::get_meetings_with_notes(pool)
+        .await
+        .map_err(|e| format!("Failed to get meetings with notes: {}", e))
+}
+
+// ===== MEETING AUDIO API COMMANDS =====
+
+/// Get the path to the audio file for a meeting
+/// Searches for audio files in the meeting's folder with common extensions
+#[tauri::command]
+pub async fn api_get_meeting_audio_path(
+    meeting_id: String,
+    folder_path: String,
+) -> Result<Option<String>, String> {
+    log_info!(
+        "api_get_meeting_audio_path called: meeting={}, folder={}",
+        meeting_id,
+        folder_path
+    );
+
+    let folder = std::path::Path::new(&folder_path);
+
+    // Check if folder exists
+    if !folder.exists() {
+        log_warn!("Meeting folder does not exist: {}", folder_path);
+        return Ok(None);
+    }
+
+    // List of audio file extensions to check (in order of preference)
+    let audio_extensions = ["mp4", "m4a", "wav", "mp3", "ogg", "flac"];
+
+    // Look for audio files with common names
+    let audio_names = ["audio", "recording", "mixed_audio"];
+
+    for name in &audio_names {
+        for ext in &audio_extensions {
+            let audio_path = folder.join(format!("{}.{}", name, ext));
+            if audio_path.exists() {
+                log_info!("Found audio file: {}", audio_path.display());
+                return Ok(Some(audio_path.to_string_lossy().to_string()));
+            }
+        }
+    }
+
+    // Fallback: scan directory for any audio file
+    if let Ok(entries) = std::fs::read_dir(folder) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(ext) = path.extension() {
+                    let ext_lower = ext.to_string_lossy().to_lowercase();
+                    if audio_extensions.contains(&ext_lower.as_str()) {
+                        log_info!("Found audio file by extension scan: {}", path.display());
+                        return Ok(Some(path.to_string_lossy().to_string()));
+                    }
+                }
+            }
+        }
+    }
+
+    log_warn!("No audio file found in folder: {}", folder_path);
+    Ok(None)
 }

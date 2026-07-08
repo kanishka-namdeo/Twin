@@ -1,4 +1,5 @@
 use crate::audio::{GpuType, PerformanceTier};
+use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WhisperCompiledBackend {
@@ -7,6 +8,17 @@ pub enum WhisperCompiledBackend {
     Vulkan,
     HipBlas,
     Cpu,
+}
+
+/// Comprehensive acceleration information for diagnostic purposes
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AccelerationInfo {
+    pub compiled_backend: String,
+    pub runtime_detected_gpu: String,
+    pub use_gpu: bool,
+    pub flash_attention_enabled: bool,
+    pub performance_tier: String,
+    pub diagnostic_summary: String,
 }
 
 impl WhisperCompiledBackend {
@@ -76,6 +88,59 @@ pub fn whisper_context_acceleration_for(
         use_gpu,
         flash_attn: use_gpu && flash_attn,
         gpu_device: 0,
+    }
+}
+
+/// Build a full AccelerationInfo snapshot from current hardware + compiled backend.
+pub fn get_acceleration_info() -> AccelerationInfo {
+    let compiled_backend = WhisperCompiledBackend::current();
+    let hardware_profile = crate::audio::HardwareProfile::detect();
+    let acceleration = whisper_context_acceleration_for(
+        compiled_backend,
+        hardware_profile.gpu_type,
+        hardware_profile.performance_tier,
+    );
+
+    let gpu_label = match hardware_profile.gpu_type {
+        GpuType::None => "None".to_string(),
+        GpuType::Metal => "Metal".to_string(),
+        GpuType::Cuda => "CUDA".to_string(),
+        GpuType::Vulkan => "Vulkan".to_string(),
+        GpuType::OpenCL => "OpenCL".to_string(),
+    };
+
+    let tier_label = match hardware_profile.performance_tier {
+        PerformanceTier::Low => "Low",
+        PerformanceTier::Medium => "Medium",
+        PerformanceTier::High => "High",
+        PerformanceTier::Ultra => "Ultra",
+    };
+
+    let diagnostic_summary = if acceleration.use_gpu {
+        format!(
+            "GPU acceleration ACTIVE — compiled_backend={} runtime_gpu={} flash_attn={} tier={}",
+            compiled_backend.as_str(),
+            gpu_label,
+            acceleration.flash_attn,
+            tier_label,
+        )
+    } else {
+        format!(
+            "GPU acceleration DISABLED — compiled_backend={} runtime_gpu={} tier={}. \
+             To enable CUDA, run with `pnpm run tauri:dev:cuda`.",
+            compiled_backend.as_str(),
+            gpu_label,
+            tier_label,
+        )
+    };
+
+    AccelerationInfo {
+        compiled_backend: compiled_backend.as_str().to_string(),
+        runtime_detected_gpu: gpu_label,
+        use_gpu: acceleration.use_gpu,
+        flash_attention_enabled: acceleration.flash_attn,
+        performance_tier: tier_label.to_string(),
+        diagnostic_summary,
     }
 }
 
